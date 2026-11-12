@@ -72,10 +72,14 @@ def unpack_eia_dataframe(frame: Any, series_id: str, name: str) -> dict:
     # EIA may add corrections. Last occurrence of a date wins.
     obs = list({point["date"]: point for point in obs}.values())
     obs.sort(key=lambda p: p["date"])
-    if len(obs) < 2:
+    return series_from_points(obs, series_id, name)
+
+
+def series_from_points(full_history: list[dict], series_id: str, name: str) -> dict:
+    """The snapshot's series record from its full weekly history ({"date", "mb"}, oldest first)."""
+    if len(full_history) < 2:
         raise ValueError(f"EIA {series_id}: fewer than 2 valid weekly records")
-    full_history = obs
-    obs = obs[-78:]
+    obs = full_history[-78:]
     current = obs[-1]
     change = round(current["mb"] - obs[-2]["mb"], 3)
     four_weeks = round(current["mb"] - obs[-5]["mb"], 3) if len(obs) >= 5 else None
@@ -103,6 +107,56 @@ def fetch_eia_series(session: requests.Session, series_id: str, name: str) -> di
         raise ValueError(f"EIA {series_id}: response was not an .xls workbook")
     frame = pd.read_excel(BytesIO(response.content), sheet_name="Data 1", skiprows=2, engine="xlrd")
     return unpack_eia_dataframe(frame, series_id, name)
+
+
+def fetch_release_tables(session: requests.Session) -> dict:
+    """The newest week of each series from the release's own tables (see scripts/release_tables.py)."""
+    import release_tables as rt
+
+    texts = {}
+    for table, url in (("table1", rt.TABLE1_URL), ("table4", rt.TABLE4_URL)):
+        response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        texts[table] = response.content.decode("utf-8", errors="replace")
+    return rt.ReleaseTables.parse(texts)
+
+
+def extend_from_release(series: dict[str, dict], releases: dict) -> list[str]:
+    """Adds each series' release-table week when its history workbook lags; returns the keys extended."""
+    import release_tables as rt
+
+    extended = []
+    for key, release in releases.items():
+        item = series.get(key)
+        if not item or not item.get("_full_history"):
+            continue
+        points = rt.ReleaseTables.extend(item["_full_history"], release)
+        if points is None:
+            continue
+        rebuilt = series_from_points(points, item["series_id"], item["name"])
+        rebuilt["source_note"] = "Newest week from EIA's release table; the history workbook had not updated yet."
+        series[key] = rebuilt
+        extended.append(key)
+    return extended
+
+
+def align_weeks(series: dict[str, dict], keys: tuple[str, ...]) -> str | None:
+    """Trims the given series to the newest week they all have (a partly updated release must not mix weeks);
+    returns that week, or None when one is missing."""
+    present = [series[k] for k in keys if k in series and series[k].get("_full_history")]
+    if len(present) != len(keys):
+        return None
+    common = min(item["as_of"] for item in present)
+    for key in keys:
+        item = series[key]
+        if item["as_of"] != common:
+            kept = [p for p in item["_full_history"] if p["date"] <= common]
+            note = item.get("source_note")
+            series[key] = series_from_points(kept, item["series_id"], item["name"])
+            series[key]["source_note"] = "Held at the week every series has; this one already shows a newer week."
+            if note:
+                series[key]["source_note"] += " " + note
+    return common
 
 
 def pressure_signal(series: dict[str, dict]) -> dict:
@@ -416,6 +470,15 @@ def build(existing: dict | None = None, session: requests.Session | None = None,
             if prior:
                 snapshot["eia"]["series"][key] = prior
     series = snapshot["eia"]["series"]
+    # The history workbooks can lag the release by hours: take the newest week from the release's own tables.
+    try:
+        extended = extend_from_release(series, fetch_release_tables(session))
+        if extended:
+            LOGGER.info("Release tables added the newest week to: %s", ", ".join(extended))
+    except Exception as exc:
+        LOGGER.warning("EIA release tables unavailable: %s", exc)
+        snapshot["errors"].append(f"EIA release tables (optional): {type(exc).__name__}")
+    align_weeks(series, tuple(k for k in EIA_SERIES if k in series))
     required = ("cushing", "us_crude")
     if all(k in series for k in required):
         snapshot["eia"]["status"] = "live" if not any(f"EIA {k}:" in err for err in snapshot["errors"] for k in required) else "stale"

@@ -75,6 +75,6 @@ It can't see tankers, refinery outages or storms. A typical US miss is almost as
 
 ## Data and refresh
 
-- **Stocks:** official EIA weekly files, free and with no API key.
+- **Stocks:** official EIA weekly files, free and with no API key. EIA's per-series history files can lag the release by hours, so the newest week is also read from the release's own tables (it is added only when the table's previous week matches the stored figure). If the series still show different weeks, everything is held at the newest week they all have.
 - **Next report:** EIA publishes on Wednesday at 10:30 a.m. Eastern, five days after the Friday the data week ends. Holiday weeks move (for example Veterans Day 2026: Thursday 12 Nov, noon). The app reads EIA's [release schedule](https://www.eia.gov/petroleum/supply/weekly/schedule.php) for those moves, shows the next release in your local time with a countdown, and falls back to the Wednesday rule if the page can't be read.
-- **Refresh:** a GitHub Actions job runs every morning and hourly on weekday evenings (UTC), so each new EIA report, holiday moves included, appears within about an hour.
+- **Refresh:** a GitHub Actions job runs every morning and every 20 minutes on weekday afternoons and evenings (UTC). GitHub starts scheduled jobs late at busy times, so a new EIA report, holiday moves included, usually appears within about half an hour.
