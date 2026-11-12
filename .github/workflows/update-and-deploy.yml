@@ -1,0 +1,41 @@
+name: Refresh oil intelligence and deploy iPhone app
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily refresh. Wednesday/Thursday frequent polls catch regular or holiday EIA releases.
+    - cron: "15 5 * * *"
+    - cron: "10 15,16,17,18,19,20 * * 3,4"
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install free dependencies
+        run: pip install -r requirements.txt
+      - name: Fetch official inventories and satellite imagery
+        run: python scripts/update.py
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Publish
+        id: deploy
+        uses: actions/deploy-pages@v4

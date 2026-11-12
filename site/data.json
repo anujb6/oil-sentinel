@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-12T06:30:00+00:00",
+  "snapshot_mode": "demo",
+  "eia": {
+    "status": "demo",
+    "series": {
+      "us_crude": {
+        "name": "US commercial crude, ex-SPR",
+        "series_id": "WCESTUS1",
+        "as_of": "2026-10-30",
+        "mb": 409.76,
+        "week_change_mb": -0.865,
+        "four_week_change_mb": -14.374,
+        "history": [
+          {
+            "date": "2026-09-25",
+            "mb": 427.32
+          },
+          {
+            "date": "2026-10-02",
+            "mb": 424.134
+          },
+          {
+            "date": "2026-10-09",
+            "mb": 415.577
+          },
+          {
+            "date": "2026-10-16",
+            "mb": 412.517
+          },
+          {
+            "date": "2026-10-23",
+            "mb": 410.625
+          },
+          {
+            "date": "2026-10-30",
+            "mb": 409.76
+          }
+        ],
+        "unit": "million barrels",
+        "url": "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=WCESTUS1"
+      },
+      "cushing": {
+        "name": "Cushing crude stocks",
+        "series_id": "W_EPC0_SAX_YCUOK_MBBL",
+        "as_of": "2026-10-30",
+        "mb": 27.25,
+        "week_change_mb": 0.28,
+        "four_week_change_mb": 2.505,
+        "history": [
+          {
+            "date": "2026-09-25",
+            "mb": 24.301
+          },
+          {
+            "date": "2026-10-02",
+            "mb": 24.745
+          },
+          {
+            "date": "2026-10-09",
+            "mb": 26.607
+          },
+          {
+            "date": "2026-10-16",
+            "mb": 27.594
+          },
+          {
+            "date": "2026-10-23",
+            "mb": 26.97
+          },
+          {
+            "date": "2026-10-30",
+            "mb": 27.25
+          }
+        ],
+        "unit": "million barrels",
+        "url": "https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=W_EPC0_SAX_YCUOK_MBBL"
+      }
+    },
+    "signal": {
+      "key": "mixed",
+      "title": "Mixed inventory picture",
+      "message": "National crude and Cushing changed in opposite directions or one was flat. No consistent inventory signal.",
+      "method": "Uses current week-over-week US crude and Cushing changes only, not market expectations or WTI chart direction."
+    }
+  },
+  "satellite": {
+    "status": "demo",
+    "catalog": "Element 84 Earth Search, Copernicus Sentinel-2 L2A",
+    "latest_scene_date": null,
+    "scenes": [],
+    "resolution_m": 10,
+    "site": {
+      "name": "Representative Cushing tank farm",
+      "latitude": 35.952719,
+      "longitude": -96.731958
+    },
+    "note": "Demo snapshot has not downloaded new satellite data. Set up the automatic update workflow."
+  },
+  "market": {
+    "status": "unavailable"
+  },
+  "errors": []
+}

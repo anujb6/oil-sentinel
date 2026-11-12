@@ -1,0 +1,158 @@
+/* Oil Sentinel: zero-CDN, accessible, no API keys. Figures sourced from generated data.json. */
+'use strict';
+const $ = id => document.getElementById(id);
+const state = { snapshot:null, series:'cushing' };
+const num = (v,d=2) => typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—';
+const sign = (v,d=2) => typeof v==='number'&&Number.isFinite(v)?(v>0?'+':'')+v.toFixed(d):'—';
+const niceDate = s => {if(!s)return '—';const d=new Date(s.slice(0,10)+'T12:00:00Z');return isNaN(d)?'—':d.toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});};
+const weekday = s => {if(!s)return '—';const d=new Date(s.slice(0,10)+'T12:00:00Z');return isNaN(d)?'—':d.toLocaleDateString('en-US',{day:'numeric',month:'short',timeZone:'UTC'});};
+const escapeHtml = input => String(input??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const safeUrl = raw => /^https:\/\//i.test(String(raw||''))?String(raw):'#';
+const diffClass = v => typeof v!=='number'?'':v>0?'negative':v<0?'positive':'neutral';
+const changeText = value => typeof value === 'number'?`${sign(value,3)}M bbl this week`:'Change unavailable';
+function setText(id,text){const el=$(id);if(el)el.textContent=text;}
+function setClassText(id,text,cls){const el=$(id);if(el){el.textContent=text;el.classList.remove('positive','negative','neutral');if(cls)el.classList.add(cls);}}
+function showTab(tab){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+tab));}
+
+async function loadData(){
+  const refresh=$('refresh');
+  refresh.disabled=true;
+  refresh.style.opacity='.55';
+  try{
+    const response=await fetch(new URL('./data.json',window.location.href),{cache:'no-store'});
+    if(!response.ok)throw new Error(`HTTP ${response.status}`);
+    const data=await response.json();
+    if(data.schema_version!==1)throw new Error('Unsupported snapshot schema');
+    state.snapshot=data;
+  }catch(error){
+    if(window.__FALLBACK_SNAPSHOT__){state.snapshot=window.__FALLBACK_SNAPSHOT__;}
+    else {
+      const n=$('notice');n.textContent='No published snapshot could be loaded. Run the free GitHub Actions workflow to publish data.json.';n.className='notice error';
+      refresh.disabled=false;refresh.style.opacity='1';return;
+    }
+  }
+  render();
+  refresh.disabled=false;refresh.style.opacity='1';
+}
+
+function render(){
+  const s=state.snapshot; if(!s)return;
+  const e=s.eia||{}, series=e.series||{}, c=series.cushing, us=series.us_crude;
+  setText('asof-date',niceDate(us?.as_of));
+  const days=us?.as_of?Math.floor((Date.now()-new Date(us.as_of+'T23:59:59Z').getTime())/86400000):null;
+  setText('data-age',days===null?'No verified date':days<0?'As reported':`${days} day${days===1?'':'s'} since week end`);
+  const n=$('notice');
+  if(s.snapshot_mode==='demo') {n.className='notice demo';n.textContent='DEMO / HISTORICAL SNAPSHOT — figures are from the week ending 30 October 2026, NOT current inventory. Deploy the app and run its refresh workflow for updated figures.';}
+  else if(e.status!=='live') {n.className='notice error';n.textContent='PARTIAL / STALE — official EIA data could not be verified on this build. The figures below may be old. No live inventory conclusion should be drawn.';}
+  else if(s.satellite?.status!=='live') {n.className='notice';n.textContent='EIA stocks refreshed. Satellite scene discovery is temporarily unavailable; any displayed imagery may be older.';}
+  else if(days!==null && days>12) {n.className='notice demo';n.textContent='Official EIA data looks old. Check the source publication date before using it; clicking Refresh checks the last published snapshot, not the EIA server directly.';}
+  else {n.className='notice';n.textContent=`Latest automated snapshot: ${niceDate((s.generated_at||'').slice(0,10))}. Stock figures represent week ending ${niceDate(us?.as_of)}. Satellite scenes are dated independently.`;}
+  setText('us-value',num(us?.mb,2));setClassText('us-change',changeText(us?.week_change_mb),diffClass(us?.week_change_mb));
+  setText('cushing-value',num(c?.mb,2));setClassText('cushing-change',changeText(c?.week_change_mb),diffClass(c?.week_change_mb));
+  const sat=s.satellite||{}, scene=(sat.scenes||[])[0];
+  setText('sat-date',scene?weekday(scene.date):'Unavailable');
+  setText('sat-cloud',scene?`Scene cloud ${scene.cloud_percent==null?'unknown':num(scene.cloud_percent,1)+'%'}`:'No pass found');
+  const m=s.market||{};
+  if(m.status==='available'){
+    setText('wti-price','$'+num(m.price_usd));setText('wti-contract',(m.contract||'Futures')+' · '+(m.session_date||''));
+    setClassText('wti-change',typeof m.change_pct==='number'?`${sign(m.change_pct)}% · indicative`:'Indicative, delayed quote',m.change_pct>0?'positive':m.change_pct<0?'negative':null);
+  }else{setText('wti-price','—');setText('wti-contract','No optional market feed');setText('wti-change','Check your broker for live USOIL');}
+  const signal=e.status==='live'?e.signal:{key:'unavailable',title:'No live confirmation',message:'Underlying data could not be refreshed.'};
+  setText('signal-title',signal?.title||'No validated signal');setText('signal-explainer',signal?.message||'');
+  setText('signal-icon',['loosening','lean-loosening'].includes(signal?.key)?'↑':['tightening','lean-tightening'].includes(signal?.key)?'↓':'≈');
+  const chip=$('signal-chip'); chip.textContent=signal?.key==='unavailable'?'UNVERIFIED':['loosening','lean-loosening'].includes(signal?.key)?'STOCK BUILD':['tightening','lean-tightening'].includes(signal?.key)?'STOCK DRAW':'MIXED';
+  chip.className='chip'+(['loosening','lean-loosening'].includes(signal?.key)?' risk':signal?.key==='mixed'?' caution':'');
+  for(const [id,key] of [['q-us','us_crude'],['q-cushing','cushing'],['q-gasoline','gasoline'],['q-distillate','distillate']]){
+    const val=series[key]?.week_change_mb;setClassText(id,typeof val==='number'?sign(val,3)+'M':'—',diffClass(val));
+  }
+  drawChart();renderScenes();renderBrief();renderProvenance();compareExpectation();
+}
+
+function drawChart(){
+  const series=state.snapshot?.eia?.series?.[state.series];
+  setText('chart-title',state.series==='cushing'?'Cushing storage':'US commercial crude');
+  const area=$('trend-chart');
+  const raw=Array.isArray(series?.history)?series.history:[];
+  const data=raw.filter(p=>typeof p.mb==='number'&&Number.isFinite(p.mb)).slice(-26);
+  if(data.length<2){area.innerHTML='<p class="small-muted">Not enough validated history to draw a chart.</p>';setText('chart-range','No history');return;}
+  const W=820,H=206,l=13,r=12,t=17,b=33;
+  const vals=data.map(x=>x.mb),low=Math.min(...vals),high=Math.max(...vals);
+  const pad=Math.max((high-low)*.18,.2);
+  const min=low-pad,max=high+pad;
+  const x=i=>l+(i/(data.length-1))*(W-l-r);
+  const y=v=>t+(1-(v-min)/(max-min))*(H-t-b);
+  const line=data.map((p,i)=>(i===0?'M':'L')+x(i).toFixed(1)+','+y(p.mb).toFixed(1)).join(' ');
+  const fill=line+` L${x(data.length-1).toFixed(1)},${(H-b).toFixed(1)} L${x(0)},${(H-b).toFixed(1)} Z`;
+  const ticks=[0,.25,.5,.75,1];
+  const guides=ticks.map(f=>{const val=min+f*(max-min),yy=y(val);return `<line x1="${l}" x2="${W-r}" y1="${yy}" y2="${yy}" stroke="#223342" stroke-width="1" stroke-dasharray="4 7"/><text x="${W-r}" y="${yy-5}" fill="#7f95a7" font-size="11" text-anchor="end">${num(val,1)}M</text>`;}).join('');
+  const indices=[0,Math.floor((data.length-1)/2),data.length-1];
+  const xLabels=indices.map(i=>`<text x="${x(i)}" y="${H-8}" font-size="11" fill="#8399aa" text-anchor="${i===0?'start':i===data.length-1?'end':'middle'}">${escapeHtml(weekday(data[i].date))}</text>`).join('');
+  area.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(series.name)} last ${data.length} weeks, ${num(data[0].mb)} to ${num(data[data.length-1].mb)} million barrels"><defs><linearGradient id="area-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#92e7c3" stop-opacity=".23"/><stop offset="1" stop-color="#92e7c3" stop-opacity="0"/></linearGradient></defs>${guides}<path d="${fill}" fill="url(#area-grad)"/><path d="${line}" stroke="#a3edc6" stroke-width="3" fill="none" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${x(data.length-1)}" cy="${y(data[data.length-1].mb)}" r="5" fill="#b5f7db" stroke="#0d1723" stroke-width="3"/>${xLabels}</svg>`;
+  setText('chart-range',niceDate(data[0].date)+' → '+niceDate(data[data.length-1].date));
+}
+
+function renderScenes(){
+  const sat=state.snapshot?.satellite||{};const scenes=Array.isArray(sat.scenes)?sat.scenes:[];
+  const gallery=$('scene-gallery'),list=$('scene-list');
+  if(!scenes.length){gallery.innerHTML='<div class="empty-sat">No verified satellite acquisitions in the last 65 days. Try the Copernicus browser directly.</div>';list.innerHTML='<p class="small-muted">No passes available.</p>';return;}
+  const selected=scenes.filter(s=>s.image).slice(0,2);
+  // If cropping failed, preserve real dates but show clear placeholders, not synthetic imagery.
+  const featured=selected.length?selected:scenes.slice(0,2);
+  gallery.innerHTML=featured.map(scene=>{
+    const image=scene.image&&/^images\/cushing-\d{4}-\d{2}-\d{2}\.png$/.test(scene.image)?`<img src="${scene.image}" alt="Actual Sentinel-2 crop near Cushing acquired ${escapeHtml(scene.date)}" loading="lazy">`:`<span>No downloadable crop available for this pass.<br>Open the full scene in Copernicus Browser.</span>`;
+    return `<article class="scene-card"><div class="scene-photo">${image}</div><div class="scene-info"><strong>${escapeHtml(niceDate(scene.date))}</strong><p>Sentinel-2 · scene cloud ${scene.cloud_percent==null?'not reported':num(scene.cloud_percent,1)+'%'} · 10m ground sample</p><a href="${safeUrl(scene.copernicus_url)}" target="_blank" rel="noopener noreferrer">Inspect in Copernicus ↗</a></div></article>`;
+  }).join('');
+  list.innerHTML=scenes.slice(0,8).map(scene=>`<div class="data-row"><span>${escapeHtml(niceDate(scene.date))}<span class="muted"> · clouds ${scene.cloud_percent==null?'unknown':num(scene.cloud_percent,1)+'%'}</span></span><a href="${safeUrl(scene.stac_url||scene.copernicus_url)}" target="_blank" rel="noopener noreferrer">Metadata ↗</a></div>`).join('');
+}
+
+function briefText(){
+  const s=state.snapshot||{},e=s.eia||{},sr=e.series||{},us=sr.us_crude,cu=sr.cushing;
+  if(!us||!cu)return 'Oil Sentinel. EIA inventory values are unavailable; no inference can be made.';
+  const prefix=s.snapshot_mode==='demo'?'Oil Sentinel demo, historical figures only. ':e.status!=='live'?'Oil Sentinel; inventory feed might be stale. ':'Oil Sentinel inventory update. ';
+  const sig=e.status==='live'?e.signal?.title:'No live confirmation';
+  const sat=s.satellite?.latest_scene_date;
+  return `${prefix}EIA week ending ${us.as_of}. US commercial crude ${num(us.mb)} million barrels, weekly change ${sign(us.week_change_mb)} million. Cushing ${num(cu.mb)} million barrels, weekly change ${sign(cu.week_change_mb)} million. Inventory assessment: ${sig||'unavailable'}. ${sat?`Latest available Sentinel 2 scene dated ${sat}.`:'No recent Sentinel 2 scene confirmed.'} Inventory figures alone do not tell us when to trade WTI.`;
+}
+function renderBrief(){
+  const loc=window.location;
+  const hosted=loc.protocol==='https:'||loc.protocol==='http:';
+  const url=hosted?new URL('./briefing.txt',loc.href).href:'Publish on GitHub Pages to obtain your HTTPS briefing URL.';
+  setText('briefing-url',url);setText('briefing-preview',briefText());
+  $('copy-url').disabled=!hosted;
+  setText('shortcut-status',hosted?'The text file refreshes whenever the free automation successfully republishes the dashboard.':'This local preview is for inspection. Siri needs a hosted HTTPS address.');
+}
+function renderProvenance(){
+  const s=state.snapshot||{};
+  const times=(s.eia?.series)||{};
+  const lines=[`Mode: ${s.snapshot_mode||'unknown'}`,`Generated UTC: ${s.generated_at||'unknown'}`,`EIA status: ${s.eia?.status||'unavailable'}`,`US stock week: ${times.us_crude?.as_of||'unavailable'}`,`Cushing stock week: ${times.cushing?.as_of||'unavailable'}`,`Satellite catalogue: ${s.satellite?.status||'unavailable'}`,`Latest satellite scene: ${s.satellite?.latest_scene_date||'unavailable'}`,`WTI reference: ${s.market?.status||'unavailable'}`,`Errors: ${(s.errors||[]).join('; ')||'none'}`,`Data refresh: automatic GitHub Action; click Refresh re-reads published file.`];
+  setText('provenance',lines.join('\n'));
+}
+function compareExpectation(){
+  const e=state.snapshot?.eia||{},actual=e.series?.us_crude?.week_change_mb;
+  const input=$('expectation').value.trim();
+  if(!input){setText('expect-result','Enter a forecasted inventory CHANGE (not total stocks). Negative = expected draw.');return;}
+  const exp=Number(input);
+  if(!Number.isFinite(exp)||typeof actual!=='number'){setText('expect-result','Cannot compare: invalid expectation or missing official release.');return;}
+  if(e.status!=='live'||state.snapshot.snapshot_mode==='demo'){setText('expect-result',`Historical illustration only: EIA ${sign(actual,3)}M vs expected ${sign(exp,3)}M. Not today's release.`);return;}
+  const surprise=actual-exp;
+  const word=Math.abs(surprise)<.05?'Essentially in line with expectation':surprise>0?'More inventory than expected — potentially bearish WTI':'Less inventory than expected — potentially bullish WTI';
+  setText('expect-result',`${word}. Actual ${sign(actual,3)}M; forecast ${sign(exp,3)}M; surprise ${sign(surprise,3)}M barrels.`);
+}
+async function copyText(text){
+  try{await navigator.clipboard.writeText(text);return true;}catch(e){
+    try{const box=document.createElement('textarea');box.value=text;box.style.position='fixed';box.style.opacity='0';document.body.appendChild(box);box.select();const result=document.execCommand('copy');box.remove();return result;}catch(e2){return false;}
+  }
+}
+function initialize(){
+  document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+  document.querySelectorAll('.toggle-btn').forEach(b=>b.addEventListener('click',()=>{state.series=b.dataset.series;document.querySelectorAll('.toggle-btn').forEach(x=>x.classList.toggle('selected',x===b));drawChart();}));
+  $('refresh').addEventListener('click',loadData);
+  try{const saved=localStorage.getItem('oilSentinelExpectation');if(saved!==null)$('expectation').value=saved;}catch(e){}
+  $('expectation').addEventListener('input',compareExpectation);
+  $('save-expect').addEventListener('click',()=>{try{localStorage.setItem('oilSentinelExpectation',$('expectation').value);}catch(e){}compareExpectation();});
+  $('copy-url').addEventListener('click',async()=>{if($('copy-url').disabled)return;const ok=await copyText($('briefing-url').textContent);$('copy-url').textContent=ok?'Copied ✓':'Copy failed';});
+  $('copy-brief').addEventListener('click',async()=>{const ok=await copyText(briefText());$('copy-brief').textContent=ok?'Copied ✓':'Copy failed';});
+  if('serviceWorker'in navigator && location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  loadData();
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initialize);else initialize();

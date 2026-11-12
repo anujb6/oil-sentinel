@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#09111c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Oil Sentinel">
+  <meta name="description" content="Independent open-data oil inventory and Copernicus satellite watcher. Free, Siri-ready.">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+  <title>Oil Sentinel — Physical Oil, Open Data</title>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo"><span class="logo-emblem"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="12" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M20 8v24M8 20h24" stroke="currentColor" stroke-opacity=".38"/><circle cx="20" cy="20" r="4" fill="currentColor"/></svg></span><span>OIL <b>SENTINEL</b><small>OPEN DATA / ZERO SUBSCRIPTIONS</small></span></div>
+      <button id="refresh" class="refresh" aria-label="Refresh dashboard from published snapshot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.1 6m2.1-6V4m0 7h-7"/></svg> Refresh</button>
+    </div>
+  </header>
+  <main class="main">
+    <div class="headline-row">
+      <div><p class="eyebrow"><span class="live-dot"></span> RESEARCH CONSOLE <span class="divider-dot">/</span> CUSHING · OKLAHOMA</p><h1>See the supply.<br><em>Question the signal.</em></h1><p class="subhead">EIA inventory releases + Copernicus satellite passes. A free, independent physical-oil monitor for your pocket.</p></div>
+      <div class="asof-pill"><span class="muted">DATA AS OF</span><strong id="asof-date">Loading</strong><span id="data-age" class="tiny">Checking feeds</span></div>
+    </div>
+    <div id="notice" class="notice" role="status" aria-live="polite">Retrieving your snapshot…</div>
+    <nav class="tabs" aria-label="Dashboard screens"><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="satellite">Satellite</button><button class="tab" data-tab="siri">Siri &amp; iPhone</button><button class="tab" data-tab="method">Method</button></nav>
+
+    <section id="panel-overview" class="panel active" aria-labelledby="overview-heading">
+      <h2 id="overview-heading" class="visually-hidden">Official inventory overview</h2>
+      <div class="metrics">
+        <article class="metric"><span class="metric-label">US COMMERCIAL CRUDE</span><strong id="us-value">—</strong><span class="metric-unit">million barrels, excl. SPR</span><span class="metric-foot" id="us-change">—</span></article>
+        <article class="metric"><span class="metric-label">CUSHING, OKLAHOMA</span><strong id="cushing-value">—</strong><span class="metric-unit">million barrels</span><span class="metric-foot" id="cushing-change">—</span></article>
+        <article class="metric"><span class="metric-label">LAST VERIFIED PASS</span><strong id="sat-date">—</strong><span class="metric-unit">Copernicus Sentinel-2</span><span class="metric-foot" id="sat-cloud">Cloud cover —</span></article>
+        <article class="metric"><span class="metric-label">WTI FUTURES · REFERENCE</span><strong id="wti-price">—</strong><span class="metric-unit" id="wti-contract">Optional external quote</span><span class="metric-foot" id="wti-change">Not a CFD quote</span></article>
+      </div>
+      <div class="dashboard-grid">
+        <article class="card signal-card"><div class="card-label"><span>01 / INVENTORY PRESSURE</span><span class="chip" id="signal-chip">CALCULATING</span></div><div class="signal-layout"><div><p class="signal-title" id="signal-title">Awaiting official data</p><p class="signal-explainer" id="signal-explainer">No unverified market calls.</p></div><div class="signal-icon" id="signal-icon">≈</div></div><div class="signal-foot">INVENTORY-ONLY HEURISTIC <span class="tiny-right">Not a trade recommendation</span></div></article>
+        <article class="card quick-read"><div class="card-label"><span>02 / THE WEEK'S NUMBERS</span><span class="label-dot">EIA</span></div><div class="data-row"><span>US crude change</span><strong id="q-us">—</strong></div><div class="data-row"><span>Cushing change</span><strong id="q-cushing">—</strong></div><div class="data-row"><span>Gasoline change</span><strong id="q-gasoline">—</strong></div><div class="data-row"><span>Distillates change</span><strong id="q-distillate">—</strong></div><p class="tiny disclaimer">Week-over-week changes in millions of barrels. Larger stock draws can be supportive for price, but surprises, demand, policy and chart structure matter.</p></article>
+      </div>
+      <article class="card history-card"><div class="history-header"><div><div class="card-label">03 / HISTORICAL LEVELS</div><h2 id="chart-title">Cushing storage</h2></div><div class="toggle"><button class="toggle-btn selected" data-series="cushing">Cushing</button><button class="toggle-btn" data-series="us_crude">USA</button></div></div><div id="trend-chart" class="trend-chart" aria-label="Historical stocks line chart"></div><div class="chart-footer"><span id="chart-range">—</span><span>Source: EIA · Weekly</span></div></article>
+      <article class="card surprise"><div><div class="card-label">04 / RELEASE SURPRISE CHECK</div><h2>Your market expectation vs EIA</h2><p class="small-muted">Enter the consensus weekly US crude change manually. Free public data does not provide a reliable, automatic consensus feed.</p></div><div class="expect-form"><label for="expectation">Expected change <span>(million barrels)</span></label><div class="input-group"><input type="number" inputmode="decimal" step="0.1" placeholder="e.g. -0.6" id="expectation" aria-describedby="expect-result"><button id="save-expect">Compare</button></div><p id="expect-result" class="small-muted">A negative number means an expected inventory draw.</p></div></article>
+    </section>
+
+    <section id="panel-satellite" class="panel" aria-label="Satellite scene monitoring">
+      <div class="section-intro"><p class="eyebrow">COPERNICUS / ESA</p><h2>Eyes on the tank farm.</h2><p>Explore dated, real satellite passes over one mapped Cushing storage cluster. Cloud coverage and 10-metre pixels impose strict limits on what you can infer.</p></div>
+      <div class="sat-top"><div class="sat-stat"><span>MONITORED LOCATION</span><strong>35.952719°N, 96.731958°W</strong><small>Representative tank farm, not the complete storage hub</small></div><a class="outline-link" target="_blank" rel="noopener noreferrer" href="https://browser.dataspace.copernicus.eu/?zoom=12&lat=35.952719&lng=-96.731958">Open Copernicus Browser ↗</a></div>
+      <div id="scene-gallery" class="scene-gallery"><div class="empty-sat">Satellite metadata loading…</div></div>
+      <div class="card"><div class="card-label">RECENT ACQUISITIONS</div><div id="scene-list" class="scene-list"><p>Loading…</p></div></div>
+      <div class="honesty"><span class="honesty-icon">!</span><div><strong>What these images do — and don't — tell us</strong><p>The imagery can show the facilities and broad surface changes. It cannot resolve tank fill-height differences with sufficient accuracy to compute weekly barrels. Free NAIP aerial imagery is sharper but typically years apart. This dashboard deliberately reports <em>no unverified satellite storage estimates.</em></p></div></div>
+    </section>
+
+    <section id="panel-siri" class="panel" aria-label="iPhone and Siri setup">
+      <div class="section-intro"><p class="eyebrow">APPLE SHORTCUTS / FREE</p><h2>Make oil data speak.</h2><p>Give Siri a single URL, and hear the latest official inventory changes without opening a browser.</p></div>
+      <div class="siri-layout"><article class="card"><div class="card-label">YOUR VOICE COMMAND</div><div class="say-phrase">“Hey Siri,<br><span>Oil Check.</span>”</div><p class="small-muted">Build the shortcut once in Apple's free Shortcuts app; Siri then runs it by name.</p><div class="shortcut-url"><span>YOUR PUBLIC BRIEFING URL</span><code id="briefing-url">Publish this app to generate your URL</code><button id="copy-url">Copy URL</button></div><p id="shortcut-status" class="tiny">When hosted with GitHub Pages, this becomes a normal HTTPS text feed.</p></article>
+      <article class="card steps"><div class="card-label">IPHONE SETUP / 5 ACTIONS</div><ol><li>Open the <strong>Shortcuts</strong> app and tap <strong>+</strong>.</li><li>Name the shortcut <strong>Oil Check</strong>.</li><li>Add <strong>URL</strong> and paste the briefing URL above.</li><li>Add <strong>Get Contents of URL</strong>, then <strong>Speak Text</strong>, using the URL response as the text.</li><li>Say <strong>“Hey Siri, Oil Check.”</strong> To add the dashboard as an app, open its hosted URL in Safari → Share → <strong>Add to Home Screen</strong>.</li></ol></article></div>
+      <div class="card"><div class="card-label">CURRENT BRIEFING</div><p id="briefing-preview" class="briefing-preview">Waiting for inventory data.</p><button id="copy-brief" class="secondary-btn">Copy spoken briefing</button></div>
+    </section>
+
+    <section id="panel-method" class="panel" aria-label="Transparency and method">
+      <div class="section-intro"><p class="eyebrow">SHOW YOUR WORK</p><h2>Every number has a source.</h2><p>Signals are derived from official reported inventory changes. Satellite observation metadata is not substituted for storage measurements.</p></div>
+      <div class="method-grid"><article class="card"><div class="card-label">SOURCE 01</div><h3>US Energy Information Administration</h3><p>Official weekly downloadable stock histories: US commercial crude, Cushing, gasoline and distillates. Public XLS files require no EIA API key.</p><a href="https://www.eia.gov/petroleum/supply/weekly/" target="_blank" rel="noopener noreferrer">Official weekly report ↗</a></article><article class="card"><div class="card-label">SOURCE 02</div><h3>EU Copernicus / Earth Search</h3><p>Sentinel-2 L2A scene dates, cloud metadata and public imagery. The STAC index is operated by Element 84; scenes are not continuous video.</p><a href="https://element84.com/earth-search/" target="_blank" rel="noopener noreferrer">Earth Search catalogue ↗</a></article><article class="card"><div class="card-label">SOURCE 03 / OPTIONAL</div><h3>WTI indicative quote</h3><p>AmericasOilWatch's free read-only API. The underlying quote may be delayed and represents a dated futures contract, not necessarily your broker's USOIL CFD.</p><a href="https://americasoilwatch.com/api" target="_blank" rel="noopener noreferrer">Read third-party data notes ↗</a></article><article class="card"><div class="card-label">TRADE INTERPRETATION</div><h3>How the signal is formed</h3><p>When both national crude and Cushing draw, inventories suggest tighter physical supply. When both build, looser supply. Opposite directions produce <strong>Mixed</strong>. No chart pattern, EIA consensus or macro surprise is inferred.</p><a href="https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&amp;n=PET&amp;s=W_EPC0_SAX_YCUOK_MBBL" target="_blank" rel="noopener noreferrer">Verify Cushing series ↗</a></article></div>
+      <div class="status-details"><div class="card-label">DATA PROVENANCE</div><pre id="provenance">Loading snapshot metadata…</pre></div>
+    </section>
+    <footer class="footer"><span>OIL SENTINEL · OPEN DATA, OPEN SOURCE</span><span>Built for research. Not investment advice. <a href="https://www.eia.gov/" target="_blank" rel="noopener noreferrer">EIA</a> · <a href="https://dataspace.copernicus.eu/" target="_blank" rel="noopener noreferrer">Copernicus</a></span></footer>
+  </main>
+  <script defer src="app.js"></script>
+</body>
+</html>
