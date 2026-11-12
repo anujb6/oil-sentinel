@@ -44,15 +44,20 @@ class InventoryForecaster:
         self.ridge_alpha = ridge_alpha
 
     # ---------- public ----------
-    def forecast(self, levels: pd.Series, spec: SeriesSpec) -> dict:
-        levels = self._clean(levels)
-        frame = self._features(levels)
+    def walk_forward(self, levels: pd.Series, spec: SeriesSpec) -> pd.DataFrame:
+        """Every week's actual change ("y") beside the forecast made before it ("p"), plus the next week (y empty)."""
+        frame = self._features(self._clean(levels))
         if spec.method == "seasonal":
             predictions = frame["seas10"]
         elif spec.method == "ridge":
             predictions = self._ridge_walk_forward(frame)
         else:
             raise ValueError(f"unknown method {spec.method}")
+        return pd.DataFrame({"y": frame["y"], "p": predictions})
+
+    def forecast(self, levels: pd.Series, spec: SeriesSpec) -> dict:
+        walk = self.walk_forward(levels, spec)
+        frame, predictions = walk, walk["p"]
         target = frame.index[-1]
         point = predictions.iloc[-1]
         if not np.isfinite(point):

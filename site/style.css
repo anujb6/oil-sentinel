@@ -99,3 +99,8 @@ button,a,summary{-webkit-tap-highlight-color:transparent}
 .next-label{width:100%;font-size:10.5px;letter-spacing:.12em;color:var(--muted);font-weight:700}
 .next-report strong{font-size:17px;letter-spacing:-.01em}
 .next-detail{font-size:12px;color:var(--muted)}
+.read-parts{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:6px}
+.read-parts li{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:#a9c4c3;flex-wrap:wrap}
+.read-parts li span:last-child{font-weight:600;font-variant-numeric:tabular-nums}
+.fc-levels{margin:10px 0 2px;padding:9px 12px;border-radius:9px;background:var(--surface2);border:1px solid var(--line);font-size:13px;font-weight:600}
+.fc-levels:empty{display:none}

@@ -42,6 +42,18 @@ The chart puts every past forecast (orange rings) next to what EIA actually repo
 
 Check how far off the forecast was each week over the last 3 years. Drop the biggest 10% of misses on each side, and use the rest as the range around the forecast. About 8 weeks in 10 should land inside it.
 
+### 4. The trader's read (bullish / bearish)
+
+Prices react to the **surprise**, not the raw change. Each change is compared with what is normal for that week (the forecast):
+
+- **US crude** counts fully, **Cushing** and **gasoline + diesel** half each.
+- Lower than normal reads **bullish** for crude, higher reads **bearish**, and a small gap reads **neutral**.
+- Before the release, the app shows the US crude numbers that would read bullish or bearish on their own. For example: below +0.6M is bullish, above +4.2M is bearish, when the normal change is +2.4M.
+
+**Tested** on about 870 reports from 2010 to 2026: WTI moved the called way on the release day 60% of the time (59% in 2010–17, 61% in 2018–26). The average move was +0.5% after a bullish report and −0.4% after a bearish one. The app recomputes this from EIA's daily WTI prices on every refresh.
+
+**Limits:** the market reacts within seconds of the release, so the read explains a report rather than giving a trade to take after it. The **satellite images are context only** and feed no number.
+
 ## How we know the forecast works
 
 Every week from 2010 to today was replayed using only the data that existed at the time. The model was refit each year and scored only on weeks it had never seen.

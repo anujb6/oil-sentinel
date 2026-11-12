@@ -281,6 +281,59 @@ def build_forecast(series: dict[str, dict]) -> dict:
     return result
 
 
+WTI_DAILY_SERIES = "RWTC"
+
+
+def fetch_wti_daily(session: requests.Session):
+    """EIA's daily WTI spot price (Cushing), the free official history used for the trader read's track record."""
+    import pandas as pd
+
+    url = f"https://www.eia.gov/dnav/pet/hist_xls/{WTI_DAILY_SERIES}d.xls"
+    response = session.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    if not response.content.startswith(b"\xd0\xcf\x11\xe0"):
+        raise ValueError("WTI daily: response was not an .xls workbook")
+    frame = pd.read_excel(BytesIO(response.content), sheet_name="Data 1", skiprows=2, engine="xlrd")
+    prices = pd.Series(pd.to_numeric(frame.iloc[:, 1], errors="coerce").values, index=pd.to_datetime(frame.iloc[:, 0], errors="coerce"))
+    return prices[prices.index.notna()].dropna()
+
+
+def build_trader_read(series: dict[str, dict], session: requests.Session) -> dict:
+    """Bullish / bearish / neutral read of the last report, the next report's levels, and the tested track record."""
+    import pandas as pd
+    import forecast as fc
+    import report_verdict as rv
+
+    def levels(key: str) -> pd.Series:
+        points = series[key].get("_full_history") or []
+        return pd.Series([p["mb"] for p in points], index=pd.to_datetime([p["date"] for p in points]))
+
+    forecaster = fc.InventoryForecaster()
+    products = levels("gasoline").add(levels("distillate")).dropna()
+    verdict = rv.ReportVerdict(
+        rv.Walk.of(forecaster.walk_forward(levels("us_crude"), fc.US_SPEC)),
+        rv.Walk.of(forecaster.walk_forward(levels("cushing"), fc.CUSHING_SPEC)),
+        rv.Walk.of(forecaster.walk_forward(products, fc.SeriesSpec("products", "seasonal", 1.0))),
+    )
+    result = {"status": "live", "latest": verdict.latest(), "levels": verdict.levels()}
+    try:
+        result["record"] = verdict.track_record(fetch_wti_daily(session))
+    except Exception as exc:
+        LOGGER.warning("WTI daily prices unavailable, no track record this build: %s", exc)
+        result["record"] = {}
+    return result
+
+
+def trader_sentence(read: dict) -> str:
+    if read.get("status") != "live":
+        return ""
+    latest, lv = read["latest"], read.get("levels") or {}
+    text = f"Trader's read of that report: {latest['verdict']} for crude. "
+    if lv:
+        text += f"Next report: bullish if US crude comes in below {lv['bullish_below_mb']:+.1f} million, bearish above {lv['bearish_above_mb']:+.1f} million. "
+    return text
+
+
 def fetch_next_report(session: requests.Session, latest_week: str) -> dict:
     """When the next weekly report is due, from EIA's schedule page (holiday moves) or its standard Wednesday rule."""
     from datetime import date as date_type
@@ -321,7 +374,7 @@ def siri_briefing(snapshot: dict) -> str:
         + f"Official EIA data for week ending {us['as_of']}. "
         + f"US commercial crude, {us['mb']:.2f} million barrels, weekly change {us['week_change_mb']:+.2f} million. "
         + f"Cushing, {cu['mb']:.2f} million barrels, weekly change {cu['week_change_mb']:+.2f} million. "
-        + f"Inventory assessment: {sig}. "
+        + (trader_sentence(snapshot["trader"]) if (snapshot.get("trader") or {}).get("status") == "live" else f"Inventory assessment: {sig}. ")
         + forecast_sentence(snapshot.get("forecast") or {})
         + next_report_sentence(snapshot.get("next_report") or {})
         + (f"Latest Copernicus scene: {snapshot['satellite']['latest_scene_date']}. " if snapshot.get("satellite", {}).get("latest_scene_date") else "No recent satellite acquisition verified. ")
@@ -375,6 +428,14 @@ def build(existing: dict | None = None, session: requests.Session | None = None,
             LOGGER.warning("Forecast unavailable: %s", exc)
             snapshot["errors"].append(f"Forecast: {type(exc).__name__}")
             snapshot["forecast"] = {"status": "unavailable", "reason": "Forecast could not be computed on this build."}
+    snapshot["trader"] = {"status": "unavailable", "reason": "EIA history not refreshed on this build."}
+    if snapshot["eia"]["status"] == "live" and all(k in series for k in ("gasoline", "distillate")):
+        try:
+            snapshot["trader"] = build_trader_read(series, session)
+        except Exception as exc:
+            LOGGER.warning("Trader read unavailable: %s", exc)
+            snapshot["errors"].append(f"Trader read: {type(exc).__name__}")
+            snapshot["trader"] = {"status": "unavailable", "reason": "The trader read could not be computed on this build."}
     us_week = (series.get("us_crude") or {}).get("as_of")
     snapshot["next_report"] = fetch_next_report(session, us_week) if us_week else {}
     for item in series.values():

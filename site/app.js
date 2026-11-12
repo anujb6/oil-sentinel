@@ -103,11 +103,7 @@ function render(){
     setText('wti-price','$'+num(m.price_usd));setText('wti-contract',(m.contract||'Futures')+' · '+(m.session_date||''));
     setClassText('wti-change',typeof m.change_pct==='number'?`${sign(m.change_pct)}% · indicative`:'Indicative, delayed quote',m.change_pct>0?'positive':m.change_pct<0?'negative':null);
   }else{setText('wti-price','—');setText('wti-contract','No optional market feed');setText('wti-change','Check your broker for live USOIL');}
-  const signal=e.status==='live'?e.signal:{key:'unavailable',title:'No live confirmation',message:'Underlying data could not be refreshed.'};
-  setText('signal-title',signal?.title||'No validated signal');setText('signal-explainer',signal?.message||'');
-  setText('signal-icon',['loosening','lean-loosening'].includes(signal?.key)?'↑':['tightening','lean-tightening'].includes(signal?.key)?'↓':'≈');
-  const chip=$('signal-chip'); chip.textContent=signal?.key==='unavailable'?'UNVERIFIED':['loosening','lean-loosening'].includes(signal?.key)?'STOCK BUILD':['tightening','lean-tightening'].includes(signal?.key)?'STOCK DRAW':'MIXED';
-  chip.className='chip'+(['loosening','lean-loosening'].includes(signal?.key)?' risk':signal?.key==='mixed'?' caution':'');
+  renderTraderRead();
   for(const [id,key] of [['q-us','us_crude'],['q-cushing','cushing'],['q-gasoline','gasoline'],['q-distillate','distillate']]){
     const val=series[key]?.week_change_mb;setClassText(id,typeof val==='number'?sign(val,3)+'M':'—',diffClass(val));
   }
@@ -135,6 +131,30 @@ function renderNextReport(){
   setText('next-detail',`${status} · ${week}${why} · ${nxt.release_eastern||''}`);
 }
 
+const READ_WORD={bullish:'Bullish',bearish:'Bearish',neutral:'Neutral'};
+function renderTraderRead(){
+  const s=state.snapshot||{},t=s.trader||{},chip=$('signal-chip'),parts=$('read-parts');
+  const live=t.status==='live'&&s.snapshot_mode!=='demo'&&t.latest;
+  if(!live){
+    setText('signal-title',s.snapshot_mode==='demo'?'Demo data':'No read yet');setText('signal-explainer',t.reason||'The read appears once the live workflow has run.');
+    setText('signal-icon','≈');chip.textContent='UNVERIFIED';chip.className='chip caution';parts.replaceChildren();setText('read-record','TESTED ON EIA REPORTS SINCE 2010');return;
+  }
+  const v=t.latest.verdict;
+  setText('signal-title',`${READ_WORD[v]} for crude`);
+  setText('signal-explainer',v==='neutral'?`Stocks for the week ending ${weekday(t.latest.week)} landed close to normal for the time of year: no clear push either way.`:`Stocks for the week ending ${weekday(t.latest.week)} came in ${v==='bullish'?'lower':'higher'} than normal for the time of year${v==='bullish'?', a tighter market':', a looser market'}.`);
+  setText('signal-icon',v==='bullish'?'↑':v==='bearish'?'↓':'≈');
+  chip.textContent=v.toUpperCase();chip.className='chip'+(v==='bearish'?' risk':v==='neutral'?' caution':'');
+  parts.replaceChildren(...t.latest.parts.map(p=>{
+    const li=document.createElement('li');
+    const name=document.createElement('span');name.textContent=p.name;
+    const val=document.createElement('span');val.className=p.leans==='bullish'?'positive':p.leans==='bearish'?'negative':'neutral';
+    val.textContent=`${sign(p.actual_mb,1)}M vs ${sign(p.expected_mb,1)}M normal (${p.leans})`;
+    li.append(name,val);return li;
+  }));
+  const r=t.record||{};
+  setText('read-record',r.right_pct?`SINCE ${r.from}: WTI MOVED THE CALLED WAY ${Math.round(r.right_pct)}% OF RELEASE DAYS · AVG ${sign(r.bullish_avg_move_pct,1)}% BULLISH / ${sign(r.bearish_avg_move_pct,1)}% BEARISH`:'TESTED ON EIA REPORTS SINCE 2010');
+}
+
 function renderForecast(){
   const s=state.snapshot||{},fc=s.forecast||{};
   const rangeText=f=>f&&typeof f.low_mb==='number'?`likely ${sign(f.low_mb,1)} to ${sign(f.high_mb,1)}M`:'';
@@ -144,6 +164,8 @@ function renderForecast(){
   setClassText('fc-us',live?valueText(fc.us_crude):'—',live?diffClass(fc.us_crude?.change_mb):null);setText('fc-us-range',live?rangeText(fc.us_crude):'');
   setClassText('fc-cu',live?valueText(fc.cushing):'—',live?diffClass(fc.cushing?.change_mb):null);setText('fc-cu-range',live?rangeText(fc.cushing):'');
   setClassText('fc-out',live?valueText(fc.us_outlook):'—',live?diffClass(fc.us_outlook?.change_mb):null);setText('fc-out-range',live&&fc.us_outlook?`through ${weekday(fc.us_outlook.through_week)} · ${rangeText(fc.us_outlook)}`:'');
+  const lv=s.trader?.levels||{};
+  setText('fc-levels',live&&lv.bullish_below_mb!==undefined?`Bullish if US crude comes in below ${sign(lv.bullish_below_mb,1)}M · bearish above ${sign(lv.bearish_above_mb,1)}M (normal ${sign(lv.expected_mb,1)}M)`:'');
   if(!live){setText('fc-track',s.snapshot_mode==='demo'?'Forecasts appear once the live workflow has run.':(fc.reason||'Forecast unavailable on this build.'));setText('fc-last','');return;}
   const us=fc.us_crude.backtest,cu=fc.cushing.backtest,yr=d=>String(d||'').slice(0,4);
   setText('fc-track',`Tested on ${us.weeks} unseen weeks (${yr(us.from)}–${yr(us.to)}): typical miss US ±${num(us.mae_mb,1)}M (a no-change guess misses ±${num(us.naive_mae_mb,1)}M), Cushing ±${num(cu.mae_mb,2)}M (vs ±${num(cu.naive_mae_mb,2)}M). Right direction on moves over 1M: US ${Math.round(us.direction_hit*100)}%, Cushing ${Math.round(cu.direction_hit*100)}%. Ranges held ${Math.round(us.band_coverage*100)}% of weeks.`);
@@ -183,13 +205,19 @@ function briefText(){
   const prefix=s.snapshot_mode==='demo'?'Oil Sentinel demo, historical figures only. ':e.status!=='live'?'Oil Sentinel; inventory feed might be stale. ':'Oil Sentinel inventory update. ';
   const sig=e.status==='live'?e.signal?.title:'No live confirmation';
   const sat=s.satellite?.latest_scene_date;
-  return `${prefix}EIA week ending ${us.as_of}. US commercial crude ${num(us.mb)} million barrels, weekly change ${sign(us.week_change_mb)} million. Cushing ${num(cu.mb)} million barrels, weekly change ${sign(cu.week_change_mb)} million. Inventory assessment: ${sig||'unavailable'}. ${forecastSentence(s)}${sat?`Latest available Sentinel 2 scene dated ${sat}.`:'No recent Sentinel 2 scene confirmed.'} Inventory figures alone do not tell us when to trade WTI.`;
+  return `${prefix}EIA week ending ${us.as_of}. US commercial crude ${num(us.mb)} million barrels, weekly change ${sign(us.week_change_mb)} million. Cushing ${num(cu.mb)} million barrels, weekly change ${sign(cu.week_change_mb)} million. ${traderSentence(s)||`Inventory assessment: ${sig||'unavailable'}. `}${forecastSentence(s)}${sat?`Latest available Sentinel 2 scene dated ${sat}.`:'No recent Sentinel 2 scene confirmed.'} Inventory figures alone do not tell us when to trade WTI.`;
 }
 function forecastSentence(s){
   const fc=s.forecast||{};
   if(fc.status!=='live'||s.snapshot_mode==='demo'||!fc.us_crude||!fc.cushing)return '';
   const us=fc.us_crude,cu=fc.cushing;
   return `Forecast for the report covering week ending ${us.target_week}: US crude ${sign(us.change_mb,1)} million, likely between ${sign(us.low_mb,1)} and ${sign(us.high_mb,1)}. Cushing ${sign(cu.change_mb,1)} million. `;
+}
+function traderSentence(s){
+  const t=s.trader||{};
+  if(t.status!=='live'||s.snapshot_mode==='demo'||!t.latest)return '';
+  const lv=t.levels||{};
+  return `Trader's read of that report: ${t.latest.verdict} for crude. `+(lv.bullish_below_mb!==undefined?`Next report: bullish if US crude comes in below ${sign(lv.bullish_below_mb,1)} million, bearish above ${sign(lv.bearish_above_mb,1)} million. `:'');
 }
 function renderBrief(){
   const loc=window.location;
