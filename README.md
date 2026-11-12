@@ -1,88 +1,63 @@
-# OIL SENTINEL — Free, iPhone- and Siri-ready oil storage monitor
+# Oil Sentinel
 
-**Everything runs on no-cost public resources. No subscription, credit card, paid satellite feed or EIA API key required.**
+Live app: https://anujb6.github.io/oil-sentinel/
 
-The project is a small browser-based app installable on the iPhone Home Screen. A scheduled GitHub Action fetches official EIA crude stocks and new Copernicus Sentinel-2 imagery; GitHub Pages hosts the resulting static files. Apple's Shortcuts app can read the latest spoken report aloud through Siri.
+<p>
+  <img src="docs/app-overview.png" alt="Oil Sentinel overview on a phone" width="300">
+  <img src="docs/app-forecast.png" alt="Next-report forecast card" width="300">
+</p>
 
-### What it actually measures
+## What it computes
 
-| Feature | Data source | Reliability |
-|---|---|---|
-| US commercial crude stock, ex-SPR | Official EIA weekly XLS | Authoritative for the published period |
-| Cushing crude stock | Official EIA weekly XLS | Authoritative for the published period |
-| Gasoline and distillate stocks | Official EIA weekly XLS | Authoritative for the published period |
-| Inventory build/draw heuristic | Explicit two-series calculation | Research context, not predictive |
-| Satellite scene dates & clouds | Sentinel-2 L2A via Earth Search | Public scene metadata; cloud percentage applies to the tile |
-| Satellite RGB crops | Windowed read of public Sentinel-2 COG (best-effort) | Illustrative only, no tank-level barrels |
-| WTI indicative quote (optional) | AmericasOilWatch public API / futures data | Not guaranteed live, may differ from broker CFD |
-| Forecast surprise comparison | You type consensus weekly change locally | Manual; no paid expectations feed |
+Every week the U.S. Energy Information Administration (EIA) publishes how much crude oil is in storage. The app downloads the official figures and works out three things.
 
-**Core honesty rule:** Copernicus Sentinel-2 has 10 m pixels, insufficient to measure weekly floating-roof tank fill height. Do not use satellite photos to invent a value like '+0.3 million barrels'. The precise Cushing and US inventory stock levels come from EIA instead. Free NAIP aerial imagery can be 1m, but normally refreshes on a multi-year cadence, not weekly.
+### 1. This week's change
 
-## Set up in a public GitHub repository (no command line required)
+The stock level this week minus last week, in million barrels, for:
 
-1. Sign in to a free account at [github.com](https://github.com/). Click **New repository**, name it `oil-sentinel`, choose **Public**, create it.
-2. Unzip `Oil-Sentinel-Free.zip` on a computer (or iPhone Files if comfortable). Open the `oil-sentinel` folder and **upload its contents**, not the outer folder or zip, to your repository via **Add file → Upload files**. GitHub's web uploader may not include dotfolders from mobile; make sure `.github/workflows/update-and-deploy.yml` is actually present. If it is missing, create it via GitHub's **Add file → Create new file** with that exact path and paste its contents.
-3. In the repository, open **Settings → Pages → Build and deployment → Source**, choose **GitHub Actions**.
-4. Open **Actions → Refresh oil intelligence and deploy iPhone app → Run workflow**. Enable workflows if GitHub asks. The first job runs the EIA/STAC fetch, then publishes the page.
-5. Open `https://YOUR-USERNAME.github.io/oil-sentinel/` in Safari; replace `YOUR-USERNAME` with your GitHub handle. From **Share → Add to Home Screen**, choose **Oil Sentinel**. This installs the PWA for one-tap access. If you renamed the repo, replace `oil-sentinel` in the URL.
-6. In the app, choose **Siri & iPhone**; use the displayed URL for the voice Shortcut. See `IPHONE_SETUP.md`.
+- US commercial crude (excluding the government's emergency reserve)
+- Cushing, Oklahoma (where US crude futures are delivered)
+- Gasoline and distillates (diesel and heating oil)
 
-The `.github/workflows/update-and-deploy.yml` file automatically refreshes daily at 05:15 UTC and runs six additional checks per day on Wednesday and Thursday between 15:10 and 20:10 UTC. GitHub scheduled workflows can be delayed or paused; GitHub may disable them after 60 days of public repo inactivity. Press **Run workflow** manually if needed. GitHub Pages requires a public repo for the no-cost plan. The free tier has fair-use limits, but this light workflow is designed to stay well below them.
+**Inventory pressure:** if US crude and Cushing both fell, stocks are drawing (supply is tightening). If both rose, stocks are building. If they moved in opposite directions, the picture is mixed.
 
-**This file package does not deploy itself.** Until a GitHub repository is created and its Pages workflow is run, no live URL or Siri address exists. The included `site/data.json` contains a clearly labelled *historical demo* based on the week ending 2026-10-30, so you can inspect the app before the first refresh.
+### 2. Next week's forecast
 
-## Run/test locally (optional)
+**US crude: "what usually happens this week of the year."**
+Take the same week, plus the week either side, in each of the last 10 years, and average the change. Refinery maintenance, driving season and winter heating repeat every year.
+*Example:* around early November the last 10 years averaged a build of about 2.4 million barrels, so the forecast is +2.4M.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt pytest
-python scripts/update.py
-python -m http.server 8000 -d site
-# Open http://localhost:8000
-pytest -q
-```
+**Cushing: "it keeps going the way it has been going."**
+Pipelines fill and drain Cushing over several weeks, so its moves come in slow waves. The forecast is about 60% of its average weekly change over the last 4 weeks, plus a small seasonal nudge.
+*Example:* if Cushing rose about 0.6M a week recently, the forecast is about +0.4M.
+The exact weights come from a ridge regression that is re-learned from history every year (`scripts/forecast.py`).
 
-To skip satellite image rendering for a quick test, call `build(render_images=False)` from Python. Internet access is required to fetch fresh sources. When a source is unavailable, the app labels the partial/stale state rather than making up current readings.
+**US crude, next 4 reports:** the same seasonal average, added up over the next four weeks.
 
-## Files
+### 3. The "likely" range
 
-- `site/index.html`, `site/style.css`, `site/app.js`: complete responsive mobile dashboard, no CDN.
-- `site/data.json`: initially historical demo; generated with live EIA stock data after successful workflow.
-- `site/briefing.txt`: the plain-language response for the Siri voice Shortcut.
-- `site/manifest.webmanifest`, `site/sw.js`, icons: home-screen installation and offline shell.
-- `scripts/update.py`: data-ingestion engine and optional true-colour satellite image crop generator.
-- `.github/workflows/update-and-deploy.yml`: free scheduled update, publish to GitHub Pages.
-- `tests/test_update.py`: smoke tests for data parsing, pressure logic, catalog handling, and honesty around stale inputs.
+Check how far off the forecast was each week over the last 3 years. Drop the biggest 10% of misses on each side, and use the rest as the range around the forecast. About 8 weeks in 10 should land inside it.
 
-## Data/source links
+## How we know the forecast works
 
-- EIA weekly petroleum status report: https://www.eia.gov/petroleum/supply/weekly/
-- Official EIA Cushing series: https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?f=W&n=PET&s=W_EPC0_SAX_YCUOK_MBBL
-- EIA downloadable public XLS template: https://www.eia.gov/dnav/pet/hist_xls/W_EPC0_SAX_YCUOK_MBBLw.xls
-- Copernicus data: https://dataspace.copernicus.eu/
-- Copernicus browser: https://browser.dataspace.copernicus.eu/
-- Earth Search free STAC: https://element84.com/earth-search/
-- Optional WTI quote: https://americasoilwatch.com/api
-- Apple Siri & Shortcuts: https://support.apple.com/en-ie/guide/shortcuts/apd07c25bb38/ios
+Every week from 2010 to today was replayed using only the data that existed at the time. The model was refit each year and scored only on weeks it had never seen.
 
-## Trading use
+| | Typical miss | A "no change" guess misses | Right direction (moves over 1M) |
+|---|---|---|---|
+| US crude | ±3.5M barrels | ±3.9M | 69% |
+| Cushing | ±0.88M | ±1.00M | 78% |
 
-Treat this as a **physical-inventory information source**, not an automated buy/sell signal. For an EIA surprise, compare the actual US crude change to a reliable consensus, plus Cushing, gasoline/distillates, refinery utilization, production, and price action. During EIA release hours, delayed GitHub Actions execution and web-cache propagation mean this app should **not** be used for second-by-second news trading.
+The ranges held in 76% of weeks.
 
-## License
+For US crude, fancier models using production, imports, exports and refinery runs (ridge regression and gradient boosting) were no better than the simple seasonal average, so the simple one is used.
 
-MIT for original code. Third-party data remains subject to original provider terms and attribution. No suggestion of affiliation or endorsement by EIA, ESA, Copernicus, GitHub, Apple, or Element 84.
+The app recomputes these numbers on every refresh and shows them under the forecast.
 
-## How the forecast works (plain English)
+## What it can't do
 
-- **US crude:** the average change for the same week of the year (plus the week either side) over the last 10 years. Seasonal patterns (refinery maintenance, driving season, winter heating) repeat, and this beat fancier models built on production, imports, exports and refinery data.
-- **Cushing:** about 60% of the last 4 weeks' average change, plus a small seasonal nudge. Cushing fills and drains in slow waves. The weights are re-learned each year (ridge regression in `scripts/forecast.py`).
-- **Likely range:** the middle 80% of the forecast's misses over the last 3 years, added to the forecast.
-- **Testing:** every week from 2010 onward was replayed using only data available at the time. US typical miss is about 3.5M barrels (a no-change guess misses 3.9M) and the direction is right 69% of the time on moves over 1M. Cushing: 0.88M vs 1.00M, 78%.
-- **Limits:** it can't see tankers, outages or storms. Use it as "normal for this time of year" to compare the real EIA number against, not as a trade signal.
+It can't see tankers, refinery outages or storms. A typical US miss is almost as big as a typical week's move, so read the forecast as "normal for this time of year", a baseline to compare the real EIA number against. It is not a trade signal.
 
-## Schedule
+## Data and refresh
 
-The workflow runs daily at 05:15 UTC and hourly 15:10–20:10 UTC on Wednesdays and Thursdays, so it catches the weekly EIA release (normally Wednesday 10:30 ET, a day later in holiday weeks) within about an hour. Each run re-enables the workflow so GitHub's 60-day inactivity rule never switches the schedule off.
+- **Stocks:** official EIA weekly files, free and with no API key.
+- **Refresh:** a GitHub Actions job runs daily, and hourly on Wednesday and Thursday evenings (UTC), so each new EIA report appears within about an hour.
