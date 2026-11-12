@@ -3,11 +3,13 @@ on:
   workflow_dispatch:
   schedule:
     # Daily morning refresh.
-    - cron: "15 5 * * *"
+    - cron: "17 5 * * *"
     # Every 20 minutes on weekday evenings (UTC 15:00-22:40): the Wednesday 10:30 a.m. ET release (15:30 UTC in winter,
     # 14:30 in summer, so 14:x too) and holiday moves (Thursday noon, Monday 5 p.m.). GitHub runs schedules best-effort,
-    # often late, so the slots are close together; a run with nothing new just republishes the same data.
-    - cron: "*/20 14-22 * * 1-5"
+    # often late, so the slots are close together and off the hour's busy minute (:07, :27, :47); a run with nothing new
+    # just republishes the same data. Renamed from update-and-deploy.yml on 12 Nov 2026: that file's schedule never
+    # fired after the repository's default branch was switched away and back.
+    - cron: "7,27,47 14-22 * * 1-5"
 permissions:
   contents: read
   actions: write  # lets the keep-alive step stop GitHub disabling the schedule after 60 quiet days
@@ -73,4 +75,4 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/update-and-deploy.yml/enable"
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/refresh.yml/enable"
