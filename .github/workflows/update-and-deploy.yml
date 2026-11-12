@@ -14,28 +14,47 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build-and-publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Install Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
       - name: Install free dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest
+      - name: Run tests
+        run: python -m pytest -q tests
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@v6
+      - name: Restore last published snapshot
+        # data.json is never committed, so without this a failed source falls back to the bundled demo week.
+        env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          if curl -fsS --max-time 20 "$BASE_URL/data.json" -o "$RUNNER_TEMP/live.json" \
+             && python scripts/restore_snapshot.py "$RUNNER_TEMP/live.json" > "$RUNNER_TEMP/images.txt"; then
+            cp "$RUNNER_TEMP/live.json" site/data.json
+            mkdir -p site/images
+            while read -r img; do
+              [ -n "$img" ] && curl -fsS --max-time 30 "$BASE_URL/$img" -o "site/$img" || true
+            done < "$RUNNER_TEMP/images.txt"
+            echo "Restored published snapshot."
+          else
+            echo "No usable published snapshot; starting from the bundled file."
+          fi
       - name: Fetch official inventories and satellite imagery
         run: python scripts/update.py
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
       - name: Upload static site
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - name: Publish
         id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
