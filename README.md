@@ -74,3 +74,15 @@ Treat this as a **physical-inventory information source**, not an automated buy/
 ## License
 
 MIT for original code. Third-party data remains subject to original provider terms and attribution. No suggestion of affiliation or endorsement by EIA, ESA, Copernicus, GitHub, Apple, or Element 84.
+
+## How the forecast works (plain English)
+
+- **US crude:** the average change for the same week of the year (plus the week either side) over the last 10 years. Seasonal patterns (refinery maintenance, driving season, winter heating) repeat, and this beat fancier models built on production, imports, exports and refinery data.
+- **Cushing:** about 60% of the last 4 weeks' average change, plus a small seasonal nudge. Cushing fills and drains in slow waves. The weights are re-learned each year (ridge regression in `scripts/forecast.py`).
+- **Likely range:** the middle 80% of the forecast's misses over the last 3 years, added to the forecast.
+- **Testing:** every week from 2010 onward was replayed using only data available at the time. US typical miss is about 3.5M barrels (a no-change guess misses 3.9M) and the direction is right 69% of the time on moves over 1M. Cushing: 0.88M vs 1.00M, 78%.
+- **Limits:** it can't see tankers, outages or storms. Use it as "normal for this time of year" to compare the real EIA number against, not as a trade signal.
+
+## Schedule
+
+The workflow runs daily at 05:15 UTC and hourly 15:10–20:10 UTC on Wednesdays and Thursdays, so it catches the weekly EIA release (normally Wednesday 10:30 ET, a day later in holiday weeks) within about an hour. Each run re-enables the workflow so GitHub's 60-day inactivity rule never switches the schedule off.
