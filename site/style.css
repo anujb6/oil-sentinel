@@ -87,3 +87,11 @@ button,a,summary{-webkit-tap-highlight-color:transparent}
   .asof-pill{margin-top:16px}
   .toggle-btn{padding:7px 8px}
 }
+.refresh.spinning svg{animation:spin .8s linear infinite}
+.refresh.spinning{opacity:.75}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 18px);transform:translate(-50%,20px);opacity:0;pointer-events:none;z-index:30;max-width:calc(100% - 32px);width:max-content;background:#13202d;border:1px solid var(--line);color:var(--text);border-radius:12px;padding:11px 16px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.45);transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.good{border-color:#2f6b57}
+.toast.error{border-color:#6d4441;color:#ffc1b8}
+@media(prefers-reduced-motion:reduce){.refresh.spinning svg{animation:none}.toast{transition:none}}

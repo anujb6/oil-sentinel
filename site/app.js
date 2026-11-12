@@ -29,17 +29,38 @@ function registerWorker(){
   navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(reg=>{state.worker=reg;reg.update().catch(()=>{});}).catch(()=>{});
 }
 
-async function loadData(){
+const MIN_SPIN_MS=600;
+const TOAST_MS=3200;
+function toast(text,kind){
+  const t=$('toast');if(!t)return;
+  t.textContent=text;t.className='toast show'+(kind?' '+kind:'');
+  clearTimeout(toast.timer);toast.timer=setTimeout(()=>{t.className='toast';},TOAST_MS);
+}
+function updatedText(iso){
+  const d=new Date(iso||'');if(isNaN(d))return 'unknown time';
+  const mins=Math.round((Date.now()-d.getTime())/60000);
+  if(mins<1)return 'just now';if(mins<60)return `${mins} min ago`;
+  const hrs=Math.round(mins/60);if(hrs<24)return `${hrs} h ago`;
+  return d.toLocaleDateString('en-US',{day:'numeric',month:'short'});
+}
+
+async function loadData(manual=false){
   const refresh=$('refresh');
-  refresh.disabled=true;
-  refresh.style.opacity='.55';
+  if(refresh.disabled)return;
+  refresh.disabled=true;refresh.classList.add('spinning');refresh.setAttribute('aria-busy','true');
+  const started=Date.now(),before=state.snapshot?.generated_at;
+  if(manual)state.worker?.update().catch(()=>{});
+  let ok=true,offline=false;
   try{
     const response=await fetch(new URL('./data.json',window.location.href),{cache:'no-store'});
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
     if(data.schema_version!==1)throw new Error('Unsupported snapshot schema');
-    state.snapshot=data;state.loadedAt=Date.now();
+    state.snapshot=data;
+    offline=response.headers.get('X-Oil-Sentinel-Offline')==='1';
+    if(!offline)state.loadedAt=Date.now();
   }catch(error){
+    ok=false;
     const n=$('notice');
     if(state.snapshot){
       // Keep what is on screen; just say the refresh failed.
@@ -48,11 +69,16 @@ async function loadData(){
       n.textContent='No data could be loaded. Check your connection and tap Refresh.';n.className='notice error';
       setText('asof-date','Unavailable');setText('data-age','Feed not reachable');setText('fc-track','Waiting for data.');setText('fc-week','UNAVAILABLE');
     }
-    refresh.disabled=false;refresh.style.opacity='1';return;
   }
-  render();
-  refresh.disabled=false;refresh.style.opacity='1';
-  document.body.classList.add('loaded');
+  if(ok)render();
+  if(offline){const n=$('notice');n.textContent='You are offline, so this is the last data saved on this phone. Tap Refresh when you are back online.';n.className='notice error';}
+  // Keep the spinner visible long enough to see that something happened.
+  await new Promise(r=>setTimeout(r,Math.max(0,MIN_SPIN_MS-(Date.now()-started))));
+  refresh.disabled=false;refresh.classList.remove('spinning');refresh.removeAttribute('aria-busy');
+  if(!manual)return;
+  if(!ok||offline)toast('No connection. Showing the last data saved.','error');
+  else if(before&&before!==state.snapshot.generated_at)toast('New data loaded.','good');
+  else toast(`Up to date. Last server update ${updatedText(state.snapshot.generated_at)}.`);
 }
 
 function render(){
@@ -187,7 +213,7 @@ function initialize(){
     const tabs=[...document.querySelectorAll('.tab')],i=tabs.findIndex(t=>t.classList.contains('active'));
     const next=tabs[(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];showTab(next.dataset.tab);next.focus();
   });
-  $('refresh').addEventListener('click',loadData);
+  $('refresh').addEventListener('click',()=>loadData(true));
   try{const saved=localStorage.getItem('oilSentinelExpectation');if(saved!==null)$('expectation').value=saved;}catch(e){}
   $('expectation').addEventListener('input',compareExpectation);
   $('save-expect').addEventListener('click',()=>{try{localStorage.setItem('oilSentinelExpectation',$('expectation').value);}catch(e){}compareExpectation();});
