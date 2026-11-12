@@ -111,7 +111,28 @@ function render(){
   for(const [id,key] of [['q-us','us_crude'],['q-cushing','cushing'],['q-gasoline','gasoline'],['q-distillate','distillate']]){
     const val=series[key]?.week_change_mb;setClassText(id,typeof val==='number'?sign(val,3)+'M':'—',diffClass(val));
   }
-  renderForecast();drawChart();renderScenes();renderBrief();renderProvenance();compareExpectation();
+  renderForecast();renderNextReport();drawChart();renderScenes();renderBrief();renderProvenance();compareExpectation();
+}
+
+const MINUTE_MS=60*1000;
+function untilText(ms){
+  const mins=Math.round(ms/MINUTE_MS);
+  if(mins<60)return `in ${mins} min`;
+  const hrs=Math.floor(mins/60),rest=mins%60;
+  if(hrs<48)return `in ${hrs} h${rest?` ${rest} min`:''}`;
+  return `in ${Math.round(hrs/24)} days`;
+}
+function renderNextReport(){
+  const s=state.snapshot||{},nxt=s.next_report||{};
+  const at=new Date(nxt.release_utc||'');
+  if(isNaN(at)){setText('next-when','Not known yet');setText('next-detail','');return;}
+  const local=at.toLocaleString(undefined,{weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit'});
+  setText('next-when',local);
+  const why=nxt.holiday?` · moved for ${nxt.holiday}`:'';
+  const week=`covers week ending ${weekday(nxt.week_ending)}`;
+  const left=at.getTime()-Date.now();
+  const status=left>0?untilText(left):'out now · the app picks it up within the hour';
+  setText('next-detail',`${status} · ${week}${why} · ${nxt.release_eastern||''}`);
 }
 
 function renderForecast(){
@@ -227,5 +248,6 @@ function initialize(){
     state.worker?.update().catch(()=>{});
   });
   loadData();
+  setInterval(()=>{if(state.snapshot)renderNextReport();},MINUTE_MS);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initialize);else initialize();

@@ -281,6 +281,29 @@ def build_forecast(series: dict[str, dict]) -> dict:
     return result
 
 
+def fetch_next_report(session: requests.Session, latest_week: str) -> dict:
+    """When the next weekly report is due, from EIA's schedule page (holiday moves) or its standard Wednesday rule."""
+    from datetime import date as date_type
+
+    import release_schedule as rs
+
+    try:
+        response = session.get(rs.SCHEDULE_URL, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        schedule = rs.ReleaseSchedule.from_html(response.text)
+    except Exception as exc:
+        LOGGER.warning("EIA schedule page unavailable, using the standard rule: %s", exc)
+        schedule = rs.ReleaseSchedule()
+    return schedule.next_after(date_type.fromisoformat(latest_week))
+
+
+def next_report_sentence(nxt: dict) -> str:
+    if not nxt.get("release_eastern"):
+        return ""
+    why = f", moved for {nxt['holiday']}" if nxt.get("holiday") else ""
+    return f"Next report due {nxt['release_eastern']}{why}. "
+
+
 def siri_briefing(snapshot: dict) -> str:
     eia = snapshot.get("eia") or {}
     series = eia.get("series") or {}
@@ -300,6 +323,7 @@ def siri_briefing(snapshot: dict) -> str:
         + f"Cushing, {cu['mb']:.2f} million barrels, weekly change {cu['week_change_mb']:+.2f} million. "
         + f"Inventory assessment: {sig}. "
         + forecast_sentence(snapshot.get("forecast") or {})
+        + next_report_sentence(snapshot.get("next_report") or {})
         + (f"Latest Copernicus scene: {snapshot['satellite']['latest_scene_date']}. " if snapshot.get("satellite", {}).get("latest_scene_date") else "No recent satellite acquisition verified. ")
         + "These are inventory indicators, not a standalone trading signal."
     )
@@ -351,6 +375,8 @@ def build(existing: dict | None = None, session: requests.Session | None = None,
             LOGGER.warning("Forecast unavailable: %s", exc)
             snapshot["errors"].append(f"Forecast: {type(exc).__name__}")
             snapshot["forecast"] = {"status": "unavailable", "reason": "Forecast could not be computed on this build."}
+    us_week = (series.get("us_crude") or {}).get("as_of")
+    snapshot["next_report"] = fetch_next_report(session, us_week) if us_week else {}
     for item in series.values():
         item.pop("_full_history", None)
     try:
