@@ -52,6 +52,12 @@ jobs:
           fi
       - name: Fetch official inventories and satellite imagery
         run: python scripts/update.py
+      - name: Stamp the build
+        # Versioned asset URLs and a new service worker per deploy, so phones never mix old and new files.
+        run: |
+          build="$(date -u +%Y%m%d%H%M)-${GITHUB_SHA::7}"
+          sed -i "s/__BUILD__/$build/g" site/index.html site/sw.js
+          grep -q "$build" site/sw.js && echo "Build $build"
       - name: Upload static site
         uses: actions/upload-pages-artifact@v5
         with:

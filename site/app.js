@@ -1,7 +1,7 @@
 /* Oil Sentinel: zero-CDN, accessible, no API keys. Figures sourced from generated data.json. */
 'use strict';
 const $ = id => document.getElementById(id);
-const state = { snapshot:null, series:'us_crude', view:'level', chart:null };
+const state = { snapshot:null, series:'us_crude', view:'level', chart:null, worker:null, loadedAt:0 };
 const num = (v,d=2) => typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—';
 const sign = (v,d=2) => typeof v==='number'&&Number.isFinite(v)?(v>0?'+':'')+v.toFixed(d):'—';
 const niceDate = s => {if(!s)return '—';const d=new Date(s.slice(0,10)+'T12:00:00Z');return isNaN(d)?'—':d.toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});};
@@ -14,6 +14,21 @@ function setText(id,text){const el=$(id);if(el)el.textContent=text;}
 function setClassText(id,text,cls){const el=$(id);if(el){el.textContent=text;el.classList.remove('positive','negative','neutral');if(cls)el.classList.add(cls);}}
 function showTab(tab){document.querySelectorAll('.tab').forEach(b=>{const on=b.dataset.tab===tab;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+tab));}
 
+const RESUME_REFRESH_MS=60*1000;
+const BUILD=document.querySelector('meta[name="build"]')?.content||'dev';
+function registerWorker(){
+  const local=location.hostname==='localhost'||location.hostname==='127.0.0.1';
+  if(!('serviceWorker'in navigator)||(location.protocol!=='https:'&&!local))return;
+  const hadController=!!navigator.serviceWorker.controller;
+  let reloading=false;
+  // A new deploy activates a new worker; reload once so page, scripts and styles all match it.
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(!hadController||reloading)return;
+    reloading=true;location.reload();
+  });
+  navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(reg=>{state.worker=reg;reg.update().catch(()=>{});}).catch(()=>{});
+}
+
 async function loadData(){
   const refresh=$('refresh');
   refresh.disabled=true;
@@ -23,7 +38,7 @@ async function loadData(){
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
     if(data.schema_version!==1)throw new Error('Unsupported snapshot schema');
-    state.snapshot=data;
+    state.snapshot=data;state.loadedAt=Date.now();
   }catch(error){
     const n=$('notice');
     if(state.snapshot){
@@ -140,7 +155,7 @@ function renderBrief(){
 function renderProvenance(){
   const s=state.snapshot||{};
   const times=(s.eia?.series)||{};
-  const lines=[`Mode: ${s.snapshot_mode||'unknown'}`,`Generated UTC: ${s.generated_at||'unknown'}`,`EIA status: ${s.eia?.status||'unavailable'}`,`US stock week: ${times.us_crude?.as_of||'unavailable'}`,`Cushing stock week: ${times.cushing?.as_of||'unavailable'}`,`Satellite catalogue: ${s.satellite?.status||'unavailable'}`,`Latest satellite scene: ${s.satellite?.latest_scene_date||'unavailable'}`,`Forecast: ${s.forecast?.status||'unavailable'}`,`WTI reference: ${s.market?.status||'unavailable'}`,`Errors: ${(s.errors||[]).join('; ')||'none'}`,`Data refresh: automatic GitHub Action; click Refresh re-reads published file.`];
+  const lines=[`Mode: ${s.snapshot_mode||'unknown'}`,`Generated UTC: ${s.generated_at||'unknown'}`,`EIA status: ${s.eia?.status||'unavailable'}`,`US stock week: ${times.us_crude?.as_of||'unavailable'}`,`Cushing stock week: ${times.cushing?.as_of||'unavailable'}`,`Satellite catalogue: ${s.satellite?.status||'unavailable'}`,`Latest satellite scene: ${s.satellite?.latest_scene_date||'unavailable'}`,`Forecast: ${s.forecast?.status||'unavailable'}`,`App build: ${BUILD}`,`WTI reference: ${s.market?.status||'unavailable'}`,`Errors: ${(s.errors||[]).join('; ')||'none'}`,`Data refresh: automatic GitHub Action; click Refresh re-reads published file.`];
   setText('provenance',lines.join('\n'));
 }
 function compareExpectation(){
@@ -178,7 +193,13 @@ function initialize(){
   $('save-expect').addEventListener('click',()=>{try{localStorage.setItem('oilSentinelExpectation',$('expectation').value);}catch(e){}compareExpectation();});
   $('copy-url').addEventListener('click',async()=>{if($('copy-url').disabled)return;const ok=await copyText($('briefing-url').textContent);$('copy-url').textContent=ok?'Copied ✓':'Copy failed';});
   $('copy-brief').addEventListener('click',async()=>{const ok=await copyText(briefText());$('copy-brief').textContent=ok?'Copied ✓':'Copy failed';});
-  if('serviceWorker'in navigator && location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  registerWorker();
+  // Home-screen apps resume instead of reloading: check for fresh data and a new version on return.
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState!=='visible')return;
+    if(Date.now()-state.loadedAt>RESUME_REFRESH_MS)loadData();
+    state.worker?.update().catch(()=>{});
+  });
   loadData();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initialize);else initialize();
