@@ -65,7 +65,23 @@ function render(){
   for(const [id,key] of [['q-us','us_crude'],['q-cushing','cushing'],['q-gasoline','gasoline'],['q-distillate','distillate']]){
     const val=series[key]?.week_change_mb;setClassText(id,typeof val==='number'?sign(val,3)+'M':'—',diffClass(val));
   }
-  drawChart();renderScenes();renderBrief();renderProvenance();compareExpectation();
+  renderForecast();drawChart();renderScenes();renderBrief();renderProvenance();compareExpectation();
+}
+
+function renderForecast(){
+  const s=state.snapshot||{},fc=s.forecast||{};
+  const rangeText=f=>f&&typeof f.low_mb==='number'?`likely ${sign(f.low_mb,1)} to ${sign(f.high_mb,1)}M`:'';
+  const valueText=f=>f&&typeof f.change_mb==='number'?`${sign(f.change_mb,1)}M`:'—';
+  const live=fc.status==='live'&&s.snapshot_mode!=='demo';
+  setText('fc-week',live&&fc.us_crude?.target_week?'WEEK ENDING '+weekday(fc.us_crude.target_week).toUpperCase():'UNAVAILABLE');
+  setClassText('fc-us',live?valueText(fc.us_crude):'—',live?diffClass(fc.us_crude?.change_mb):null);setText('fc-us-range',live?rangeText(fc.us_crude):'');
+  setClassText('fc-cu',live?valueText(fc.cushing):'—',live?diffClass(fc.cushing?.change_mb):null);setText('fc-cu-range',live?rangeText(fc.cushing):'');
+  setClassText('fc-out',live?valueText(fc.us_outlook):'—',live?diffClass(fc.us_outlook?.change_mb):null);setText('fc-out-range',live&&fc.us_outlook?`through ${weekday(fc.us_outlook.through_week)} · ${rangeText(fc.us_outlook)}`:'');
+  if(!live){setText('fc-track',s.snapshot_mode==='demo'?'Forecasts appear once the live workflow has run.':(fc.reason||'Forecast unavailable on this build.'));setText('fc-last','');return;}
+  const us=fc.us_crude.backtest,cu=fc.cushing.backtest,yr=d=>String(d||'').slice(0,4);
+  setText('fc-track',`Tested on ${us.weeks} unseen weeks (${yr(us.from)}–${yr(us.to)}): typical miss US ±${num(us.mae_mb,1)}M (a no-change guess misses ±${num(us.naive_mae_mb,1)}M), Cushing ±${num(cu.mae_mb,2)}M (vs ±${num(cu.naive_mae_mb,2)}M). Right direction on moves over 1M: US ${Math.round(us.direction_hit*100)}%, Cushing ${Math.round(cu.direction_hit*100)}%. Ranges held ${Math.round(us.band_coverage*100)}% of weeks.`);
+  const lw=fc.us_crude.last_week,lc=fc.cushing.last_week;
+  setText('fc-last',lw&&typeof lw.forecast_mb==='number'?`Last report (${weekday(lw.week)}): US forecast ${sign(lw.forecast_mb,1)}M, actual ${sign(lw.actual_mb,1)}M · Cushing forecast ${sign(lc?.forecast_mb,1)}M, actual ${sign(lc?.actual_mb,1)}M.`:'');
 }
 
 function drawChart(){
@@ -111,7 +127,13 @@ function briefText(){
   const prefix=s.snapshot_mode==='demo'?'Oil Sentinel demo, historical figures only. ':e.status!=='live'?'Oil Sentinel; inventory feed might be stale. ':'Oil Sentinel inventory update. ';
   const sig=e.status==='live'?e.signal?.title:'No live confirmation';
   const sat=s.satellite?.latest_scene_date;
-  return `${prefix}EIA week ending ${us.as_of}. US commercial crude ${num(us.mb)} million barrels, weekly change ${sign(us.week_change_mb)} million. Cushing ${num(cu.mb)} million barrels, weekly change ${sign(cu.week_change_mb)} million. Inventory assessment: ${sig||'unavailable'}. ${sat?`Latest available Sentinel 2 scene dated ${sat}.`:'No recent Sentinel 2 scene confirmed.'} Inventory figures alone do not tell us when to trade WTI.`;
+  return `${prefix}EIA week ending ${us.as_of}. US commercial crude ${num(us.mb)} million barrels, weekly change ${sign(us.week_change_mb)} million. Cushing ${num(cu.mb)} million barrels, weekly change ${sign(cu.week_change_mb)} million. Inventory assessment: ${sig||'unavailable'}. ${forecastSentence(s)}${sat?`Latest available Sentinel 2 scene dated ${sat}.`:'No recent Sentinel 2 scene confirmed.'} Inventory figures alone do not tell us when to trade WTI.`;
+}
+function forecastSentence(s){
+  const fc=s.forecast||{};
+  if(fc.status!=='live'||s.snapshot_mode==='demo'||!fc.us_crude||!fc.cushing)return '';
+  const us=fc.us_crude,cu=fc.cushing;
+  return `Forecast for the report covering week ending ${us.target_week}: US crude ${sign(us.change_mb,1)} million, likely between ${sign(us.low_mb,1)} and ${sign(us.high_mb,1)}. Cushing ${sign(cu.change_mb,1)} million. `;
 }
 function renderBrief(){
   const loc=window.location;
@@ -124,7 +146,7 @@ function renderBrief(){
 function renderProvenance(){
   const s=state.snapshot||{};
   const times=(s.eia?.series)||{};
-  const lines=[`Mode: ${s.snapshot_mode||'unknown'}`,`Generated UTC: ${s.generated_at||'unknown'}`,`EIA status: ${s.eia?.status||'unavailable'}`,`US stock week: ${times.us_crude?.as_of||'unavailable'}`,`Cushing stock week: ${times.cushing?.as_of||'unavailable'}`,`Satellite catalogue: ${s.satellite?.status||'unavailable'}`,`Latest satellite scene: ${s.satellite?.latest_scene_date||'unavailable'}`,`WTI reference: ${s.market?.status||'unavailable'}`,`Errors: ${(s.errors||[]).join('; ')||'none'}`,`Data refresh: automatic GitHub Action; click Refresh re-reads published file.`];
+  const lines=[`Mode: ${s.snapshot_mode||'unknown'}`,`Generated UTC: ${s.generated_at||'unknown'}`,`EIA status: ${s.eia?.status||'unavailable'}`,`US stock week: ${times.us_crude?.as_of||'unavailable'}`,`Cushing stock week: ${times.cushing?.as_of||'unavailable'}`,`Satellite catalogue: ${s.satellite?.status||'unavailable'}`,`Latest satellite scene: ${s.satellite?.latest_scene_date||'unavailable'}`,`Forecast: ${s.forecast?.status||'unavailable'}`,`WTI reference: ${s.market?.status||'unavailable'}`,`Errors: ${(s.errors||[]).join('; ')||'none'}`,`Data refresh: automatic GitHub Action; click Refresh re-reads published file.`];
   setText('provenance',lines.join('\n'));
 }
 function compareExpectation(){

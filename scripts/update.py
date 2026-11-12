@@ -37,6 +37,7 @@ EIA_SERIES = {
     "distillate": ("WDISTUS1", "US distillate stocks"),
 }
 LOGGER = logging.getLogger("oil-sentinel")
+FORECAST_SPECS = {"us_crude": "US_SPEC", "cushing": "CUSHING_SPEC"}
 
 
 def utcnow() -> datetime:
@@ -73,6 +74,7 @@ def unpack_eia_dataframe(frame: Any, series_id: str, name: str) -> dict:
     obs.sort(key=lambda p: p["date"])
     if len(obs) < 2:
         raise ValueError(f"EIA {series_id}: fewer than 2 valid weekly records")
+    full_history = obs
     obs = obs[-78:]
     current = obs[-1]
     change = round(current["mb"] - obs[-2]["mb"], 3)
@@ -87,6 +89,7 @@ def unpack_eia_dataframe(frame: Any, series_id: str, name: str) -> dict:
         "history": obs,
         "url": eia_history_url(series_id),
         "unit": "million barrels",
+        "_full_history": full_history,
     }
 
 
@@ -259,6 +262,25 @@ def try_market_quote(session: requests.Session) -> dict:
     return {"status": "available", "price_usd": float(price), "change_pct": data.get("changePct"), "session_date": data.get("sessionDate"), "observed_at": data.get("observedAt"), "contract": data.get("contractLabel"), "source": "AmericasOilWatch public API (underlying Yahoo Finance, futures quote)", "url": url, "warning": "Third-party delayed/indicative quote. May differ from your USOIL CFD, which is not the same instrument."}
 
 
+def build_forecast(series: dict[str, dict]) -> dict:
+    """Next-report forecasts from full EIA history; see scripts/forecast.py for the tested method."""
+    import pandas as pd
+    import forecast as fc
+
+    def levels(key: str) -> pd.Series:
+        points = series[key].get("_full_history") or []
+        return pd.Series([p["mb"] for p in points], index=pd.to_datetime([p["date"] for p in points]))
+
+    forecaster = fc.InventoryForecaster()
+    result = {"status": "live"}
+    for key, spec_name in FORECAST_SPECS.items():
+        result[key] = forecaster.forecast(levels(key), getattr(fc, spec_name))
+    result["us_outlook"] = forecaster.outlook(levels("us_crude"))
+    if result["us_crude"]["target_week"] != result["cushing"]["target_week"]:
+        raise ValueError("US and Cushing forecasts target different weeks")
+    return result
+
+
 def siri_briefing(snapshot: dict) -> str:
     eia = snapshot.get("eia") or {}
     series = eia.get("series") or {}
@@ -277,9 +299,19 @@ def siri_briefing(snapshot: dict) -> str:
         + f"US commercial crude, {us['mb']:.2f} million barrels, weekly change {us['week_change_mb']:+.2f} million. "
         + f"Cushing, {cu['mb']:.2f} million barrels, weekly change {cu['week_change_mb']:+.2f} million. "
         + f"Inventory assessment: {sig}. "
+        + forecast_sentence(snapshot.get("forecast") or {})
         + (f"Latest Copernicus scene: {snapshot['satellite']['latest_scene_date']}. " if snapshot.get("satellite", {}).get("latest_scene_date") else "No recent satellite acquisition verified. ")
         + "These are inventory indicators, not a standalone trading signal."
     )
+
+
+def forecast_sentence(fc: dict) -> str:
+    if fc.get("status") != "live":
+        return ""
+    us, cu = fc["us_crude"], fc["cushing"]
+    return (f"Forecast for the report covering week ending {us['target_week']}: "
+            f"US crude {us['change_mb']:+.1f} million, likely between {us['low_mb']:+.1f} and {us['high_mb']:+.1f}. "
+            f"Cushing {cu['change_mb']:+.1f} million. ")
 
 
 def build(existing: dict | None = None, session: requests.Session | None = None, now: datetime | None = None, render_images: bool = True) -> dict:
@@ -311,6 +343,16 @@ def build(existing: dict | None = None, session: requests.Session | None = None,
     if all(k in series for k in required):
         snapshot["eia"]["status"] = "live" if not any(f"EIA {k}:" in err for err in snapshot["errors"] for k in required) else "stale"
     snapshot["eia"]["signal"] = pressure_signal(series) if snapshot["eia"]["status"] == "live" else {"key": "unavailable", "title": "Source needs refresh", "message": "Critical data may be stale. No current inventory assessment."}
+    snapshot["forecast"] = {"status": "unavailable", "reason": "EIA history not refreshed on this build."}
+    if snapshot["eia"]["status"] == "live":
+        try:
+            snapshot["forecast"] = build_forecast(series)
+        except Exception as exc:
+            LOGGER.warning("Forecast unavailable: %s", exc)
+            snapshot["errors"].append(f"Forecast: {type(exc).__name__}")
+            snapshot["forecast"] = {"status": "unavailable", "reason": "Forecast could not be computed on this build."}
+    for item in series.values():
+        item.pop("_full_history", None)
     try:
         satellite = fetch_stac(session, now)
         # Keep newest two *usable* passes rather than selecting old clearest images.
