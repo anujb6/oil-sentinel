@@ -1,7 +1,7 @@
 /* Oil Sentinel: zero-CDN, accessible, no API keys. Figures sourced from generated data.json. */
 'use strict';
 const $ = id => document.getElementById(id);
-const state = { snapshot:null, series:'cushing' };
+const state = { snapshot:null, series:'us_crude', view:'level', chart:null };
 const num = (v,d=2) => typeof v==='number'&&Number.isFinite(v)?v.toFixed(d):'—';
 const sign = (v,d=2) => typeof v==='number'&&Number.isFinite(v)?(v>0?'+':'')+v.toFixed(d):'—';
 const niceDate = s => {if(!s)return '—';const d=new Date(s.slice(0,10)+'T12:00:00Z');return isNaN(d)?'—':d.toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});};
@@ -12,7 +12,7 @@ const diffClass = v => typeof v!=='number'?'':v>0?'negative':v<0?'positive':'neu
 const changeText = value => typeof value === 'number'?`${sign(value,3)}M bbl this week`:'Change unavailable';
 function setText(id,text){const el=$(id);if(el)el.textContent=text;}
 function setClassText(id,text,cls){const el=$(id);if(el){el.textContent=text;el.classList.remove('positive','negative','neutral');if(cls)el.classList.add(cls);}}
-function showTab(tab){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+tab));}
+function showTab(tab){document.querySelectorAll('.tab').forEach(b=>{const on=b.dataset.tab===tab;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+tab));}
 
 async function loadData(){
   const refresh=$('refresh');
@@ -25,14 +25,19 @@ async function loadData(){
     if(data.schema_version!==1)throw new Error('Unsupported snapshot schema');
     state.snapshot=data;
   }catch(error){
-    if(window.__FALLBACK_SNAPSHOT__){state.snapshot=window.__FALLBACK_SNAPSHOT__;}
-    else {
-      const n=$('notice');n.textContent='No published snapshot could be loaded. Run the free GitHub Actions workflow to publish data.json.';n.className='notice error';
-      refresh.disabled=false;refresh.style.opacity='1';return;
+    const n=$('notice');
+    if(state.snapshot){
+      // Keep what is on screen; just say the refresh failed.
+      n.textContent='Could not reach the server, so this is the last data loaded. Tap Refresh to try again.';n.className='notice error';
+    }else{
+      n.textContent='No data could be loaded. Check your connection and tap Refresh.';n.className='notice error';
+      setText('asof-date','Unavailable');setText('data-age','Feed not reachable');setText('fc-track','Waiting for data.');setText('fc-week','UNAVAILABLE');
     }
+    refresh.disabled=false;refresh.style.opacity='1';return;
   }
   render();
   refresh.disabled=false;refresh.style.opacity='1';
+  document.body.classList.add('loaded');
 }
 
 function render(){
@@ -73,7 +78,7 @@ function renderForecast(){
   const rangeText=f=>f&&typeof f.low_mb==='number'?`likely ${sign(f.low_mb,1)} to ${sign(f.high_mb,1)}M`:'';
   const valueText=f=>f&&typeof f.change_mb==='number'?`${sign(f.change_mb,1)}M`:'—';
   const live=fc.status==='live'&&s.snapshot_mode!=='demo';
-  setText('fc-week',live&&fc.us_crude?.target_week?'WEEK ENDING '+weekday(fc.us_crude.target_week).toUpperCase():'UNAVAILABLE');
+  setText('fc-week',live&&fc.us_crude?.target_week?'FOR '+weekday(fc.us_crude.target_week).toUpperCase():'UNAVAILABLE');
   setClassText('fc-us',live?valueText(fc.us_crude):'—',live?diffClass(fc.us_crude?.change_mb):null);setText('fc-us-range',live?rangeText(fc.us_crude):'');
   setClassText('fc-cu',live?valueText(fc.cushing):'—',live?diffClass(fc.cushing?.change_mb):null);setText('fc-cu-range',live?rangeText(fc.cushing):'');
   setClassText('fc-out',live?valueText(fc.us_outlook):'—',live?diffClass(fc.us_outlook?.change_mb):null);setText('fc-out-range',live&&fc.us_outlook?`through ${weekday(fc.us_outlook.through_week)} · ${rangeText(fc.us_outlook)}`:'');
@@ -86,25 +91,14 @@ function renderForecast(){
 
 function drawChart(){
   const series=state.snapshot?.eia?.series?.[state.series];
-  setText('chart-title',state.series==='cushing'?'Cushing storage':'US commercial crude');
-  const area=$('trend-chart');
-  const raw=Array.isArray(series?.history)?series.history:[];
-  const data=raw.filter(p=>typeof p.mb==='number'&&Number.isFinite(p.mb)).slice(-26);
-  if(data.length<2){area.innerHTML='<p class="small-muted">Not enough validated history to draw a chart.</p>';setText('chart-range','No history');return;}
-  const W=820,H=206,l=13,r=12,t=17,b=33;
-  const vals=data.map(x=>x.mb),low=Math.min(...vals),high=Math.max(...vals);
-  const pad=Math.max((high-low)*.18,.2);
-  const min=low-pad,max=high+pad;
-  const x=i=>l+(i/(data.length-1))*(W-l-r);
-  const y=v=>t+(1-(v-min)/(max-min))*(H-t-b);
-  const line=data.map((p,i)=>(i===0?'M':'L')+x(i).toFixed(1)+','+y(p.mb).toFixed(1)).join(' ');
-  const fill=line+` L${x(data.length-1).toFixed(1)},${(H-b).toFixed(1)} L${x(0)},${(H-b).toFixed(1)} Z`;
-  const ticks=[0,.25,.5,.75,1];
-  const guides=ticks.map(f=>{const val=min+f*(max-min),yy=y(val);return `<line x1="${l}" x2="${W-r}" y1="${yy}" y2="${yy}" stroke="#223342" stroke-width="1" stroke-dasharray="4 7"/><text x="${W-r}" y="${yy-5}" fill="#7f95a7" font-size="11" text-anchor="end">${num(val,1)}M</text>`;}).join('');
-  const indices=[0,Math.floor((data.length-1)/2),data.length-1];
-  const xLabels=indices.map(i=>`<text x="${x(i)}" y="${H-8}" font-size="11" fill="#8399aa" text-anchor="${i===0?'start':i===data.length-1?'end':'middle'}">${escapeHtml(weekday(data[i].date))}</text>`).join('');
-  area.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(series.name)} last ${data.length} weeks, ${num(data[0].mb)} to ${num(data[data.length-1].mb)} million barrels"><defs><linearGradient id="area-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#92e7c3" stop-opacity=".23"/><stop offset="1" stop-color="#92e7c3" stop-opacity="0"/></linearGradient></defs>${guides}<path d="${fill}" fill="url(#area-grad)"/><path d="${line}" stroke="#a3edc6" stroke-width="3" fill="none" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${x(data.length-1)}" cy="${y(data[data.length-1].mb)}" r="5" fill="#b5f7db" stroke="#0d1723" stroke-width="3"/>${xLabels}</svg>`;
-  setText('chart-range',niceDate(data[0].date)+' → '+niceDate(data[data.length-1].date));
+  setText('chart-title',state.series==='cushing'?'Cushing, Oklahoma':'US commercial crude');
+  if(!state.chart)state.chart=new ForecastChart($('trend-chart'),$('chart-readout'),$('chart-table-body'));
+  const fc=state.snapshot?.forecast;
+  const live=fc?.status==='live'&&state.snapshot?.snapshot_mode!=='demo';
+  state.chart.update(series,live?fc[state.series]:null,state.view);
+  document.querySelector('.chart-legend').classList.toggle('no-forecast',!live);
+  const hist=(series?.history||[]).slice(-27);
+  setText('chart-range',hist.length>1?niceDate(hist[1].date)+' → '+(live&&fc[state.series]?.target_week?niceDate(fc[state.series].target_week)+' (forecast)':niceDate(hist[hist.length-1].date)):'No history');
 }
 
 function renderScenes(){
@@ -167,7 +161,17 @@ async function copyText(text){
 }
 function initialize(){
   document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
-  document.querySelectorAll('.toggle-btn').forEach(b=>b.addEventListener('click',()=>{state.series=b.dataset.series;document.querySelectorAll('.toggle-btn').forEach(x=>x.classList.toggle('selected',x===b));drawChart();}));
+  document.querySelectorAll('.toggle-btn').forEach(b=>b.addEventListener('click',()=>{
+    const group=b.dataset.series?'series':'view';
+    if(group==='series')state.series=b.dataset.series;else state.view=b.dataset.view;
+    document.querySelectorAll(`.toggle-btn[data-${group}]`).forEach(x=>{const on=x===b;x.classList.toggle('selected',on);x.setAttribute('aria-pressed',String(on));});
+    drawChart();
+  }));
+  document.querySelector('.tabs').addEventListener('keydown',e=>{
+    if(e.key!=='ArrowRight'&&e.key!=='ArrowLeft')return;
+    const tabs=[...document.querySelectorAll('.tab')],i=tabs.findIndex(t=>t.classList.contains('active'));
+    const next=tabs[(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];showTab(next.dataset.tab);next.focus();
+  });
   $('refresh').addEventListener('click',loadData);
   try{const saved=localStorage.getItem('oilSentinelExpectation');if(saved!==null)$('expectation').value=saved;}catch(e){}
   $('expectation').addEventListener('input',compareExpectation);

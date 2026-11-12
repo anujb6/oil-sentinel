@@ -4,7 +4,7 @@ Live app: https://anujb6.github.io/oil-sentinel/
 
 <p>
   <img src="docs/app-overview.png" alt="Oil Sentinel overview on a phone" width="300">
-  <img src="docs/app-forecast.png" alt="Next-report forecast card" width="300">
+  <img src="docs/app-chart.png" alt="Stocks versus forecast chart" width="300">
 </p>
 
 ## What it computes
@@ -33,6 +33,10 @@ Pipelines fill and drain Cushing over several weeks, so its moves come in slow w
 The exact weights come from a ridge regression that is re-learned from history every year (`scripts/forecast.py`).
 
 **US crude, next 4 reports:** the same seasonal average, added up over the next four weeks.
+
+### Forecast against the chart
+
+The chart puts every past forecast (orange rings) next to what EIA actually reported (blue), for the last 26 weeks. The next report's forecast and its likely range sit in the shaded column on the right. Switch between **Level** (the stock level) and **Weekly change** (the week-to-week move). Tap or drag across the chart to read any week. **Show as table** lists the same numbers.
 
 ### 3. The "likely" range
 

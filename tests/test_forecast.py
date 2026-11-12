@@ -72,3 +72,15 @@ def test_build_forecast_and_spoken_sentence():
     text = forecast_sentence(fc)
     assert 'US crude' in text and 'Cushing' in text and fc['us_crude']['target_week'] in text
     assert forecast_sentence({'status': 'unavailable'}) == ''
+
+
+def test_recent_lists_past_forecasts_for_the_chart():
+    levels = seasonal_levels(noise=1.0, seed=4)
+    out = InventoryForecaster().forecast(levels, CUSHING_SPEC)
+    recent = out['recent']
+    assert len(recent) == 26
+    assert recent[-1]['week'] == levels.index[-1].date().isoformat()
+    assert recent[-1]['forecast_mb'] == out['last_week']['forecast_mb']
+    assert recent[-1]['actual_mb'] == pytest.approx(levels.iloc[-1] - levels.iloc[-2], abs=0.01)
+    weeks = [r['week'] for r in recent]
+    assert weeks == sorted(weeks)

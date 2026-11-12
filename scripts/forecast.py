@@ -23,6 +23,7 @@ MIN_TRAIN_ROWS = 200
 BAND_WEEKS = 156  # residuals from the last ~3 years set the 80% range
 BAND_LOW, BAND_HIGH = 0.10, 0.90
 RIDGE_ALPHA = 10.0
+RECENT_WEEKS = 26  # past forecasts shipped for the chart
 RIDGE_FEATURES = ("seas5", "seas10", "gap", "mean4")
 
 
@@ -58,6 +59,12 @@ class InventoryForecaster:
             raise ValueError(f"{spec.key}: not enough history to forecast")
         backtest = self._backtest(frame["y"], predictions, spec.direction_threshold_mb)
         low, high = point + backtest.pop("band_low"), point + backtest.pop("band_high")
+        recent = [
+            {"week": week.date().isoformat(),
+             "forecast_mb": round(float(predictions[week]), 2) if np.isfinite(predictions[week]) else None,
+             "actual_mb": round(float(frame.at[week, "y"]), 2)}
+            for week in frame.index[-RECENT_WEEKS - 1:-1]
+        ]
         latest = frame.index[-2]
         last_pred = predictions.iloc[-2]
         return {
@@ -67,6 +74,7 @@ class InventoryForecaster:
             "high_mb": round(float(high), 2),
             "method": spec.method,
             "backtest": backtest,
+            "recent": recent,
             "last_week": {
                 "week": latest.date().isoformat(),
                 "forecast_mb": round(float(last_pred), 2) if np.isfinite(last_pred) else None,
